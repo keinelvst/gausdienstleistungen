@@ -22,8 +22,8 @@ var CONFIG = {
   //
   // >>> GEWINN EINSTELLEN: Prozent-Aufschlag auf die Selbstkosten. <<<
   // 0 = reine Kostendeckung (dein 30-€/h-Fahrerlohn ist dabei schon drin).
-  // Branchenüblich sind 10–15 % (Kalkulations-Empfehlung: 12).
-  gewinnaufschlagProzent: 0,
+  // Branchenüblich sind 10–15 %. Wirkt auf Transporte, NICHT auf den Putzservice.
+  gewinnaufschlagProzent: 20,
 
   fahrerStundensatzEur: 30,      // dein Lohn als Fahrer, je Stunde
   beifahrerStundensatzEur: 30,   // Lohn Beifahrer/zweiter Träger, je Stunde
@@ -391,6 +391,11 @@ var CONFIG = {
 
   function runSelfTests() {
     var results = [];
+    // Die Tests rechnen bewusst ohne Gewinnaufschlag, damit sie unabhängig
+    // davon gelten, welcher Prozentsatz gerade eingestellt ist.
+    var margeVorTests = CONFIG.gewinnaufschlagProzent;
+    CONFIG.gewinnaufschlagProzent = 0;
+
     function check(name, actual, expected) {
       var pass = Math.abs(actual - expected) < 0.001;
       results.push({ Test: name, Erwartet: expected, Erhalten: Math.round(actual * 10000) / 10000, OK: pass });
@@ -551,6 +556,8 @@ var CONFIG = {
     check("Putz 3 h × 2 Kräfte, 12 km => 195 €", cl2.total, 195);
     var clOut = calculateCleaningPrice({ hours: 2, staff: 1, travelKm: 30, areaKm: 30 });
     checkTrue("30 km => außerhalb Einsatzgebiet", clOut.ok === false && clOut.reason === "area");
+
+    CONFIG.gewinnaufschlagProzent = margeVorTests;
 
     var failed = results.filter(function (r) { return !r.OK; });
     if (window.console && console.table) console.table(results);
