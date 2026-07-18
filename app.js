@@ -41,10 +41,10 @@ var CONFIG = {
   ladezeitProStoppMin: 30,       // Grundzeit Be-/Entladen je Stopp (Kurier-Branchenstandard)
 
   // ── Zuschläge Etagen & Schwergut (feste Euro-Beträge) ──────────────
-  // Etagenzuschlag je Etage und Adresse = Grundbetrag + Betrag je angefangenem m³.
-  // Beispiel bei 15 € + 5 €/m³:  kleines Teil 20 €/Etage · Sofa (2 m³) 25 € · volles Auto 65 €.
-  etagenGrundEur: 15,            // € je Etage und Adresse
-  etagenProM3Eur: 5,             // € zusätzlich je Etage, je angefangenem m³ Ladung
+  // Etagenzuschlag je Etage und Adresse = Grundbetrag + Betrag je m³ (exakt, ohne Aufrundung).
+  // Beispiel bei 10 € + 5 €/m³:  Waschmaschine 11,75 €/Etage · Sofa (1,8 m³) 19,13 € · volles Auto 57 €.
+  etagenGrundEur: 10,            // € je Etage und Adresse
+  etagenProM3Eur: 5,             // € zusätzlich je Etage, je m³ Ladung
   aufzugFaktor: 0.30,            // Aufzug vorhanden (und passt) => nur 30 % des Etagenzuschlags
 
   // Zuschlag je EINZELSTÜCK nach dessen Gewicht (Reihenfolge: leicht -> schwer)
@@ -220,10 +220,9 @@ var CONFIG = {
   }
 
   // Etagenzuschlag in € über beide Adressen.
-  // Je Etage: Grundbetrag + Betrag je angefangenem m³; mit Aufzug nur der Aufzug-Faktor.
+  // Je Etage: Grundbetrag + Betrag je m³ (exakt); mit Aufzug nur der Aufzug-Faktor.
   function floorSurchargeEur(volumeM3, pickup, delivery) {
-    var proEtage = CONFIG.etagenGrundEur +
-                   CONFIG.etagenProM3Eur * Math.max(1, Math.ceil(volumeM3));
+    var proEtage = CONFIG.etagenGrundEur + CONFIG.etagenProM3Eur * volumeM3;
     function fuerAdresse(a) {
       return a.floors * proEtage * (a.elevator ? CONFIG.aufzugFaktor : 1);
     }
@@ -266,8 +265,12 @@ var CONFIG = {
       km = 2 * l.depotToPickup.km + l.depotToDelivery.km;
       hours = 2 * l.depotToPickup.hours + l.depotToDelivery.hours;
     } else {
-      km = Math.max(0, l.depotToPickup.km + l.pickupToDelivery.km - l.depotToDelivery.km);
-      hours = Math.max(0, l.depotToPickup.hours + l.pickupToDelivery.hours - l.depotToDelivery.hours);
+      // Umweg-Modell: der Mehrweg für die Abholung PLUS die Strecke,
+      // die die Ladung danach tatsächlich bis zum Ziel mitfährt.
+      var umwegKm = Math.max(0, l.depotToPickup.km + l.pickupToDelivery.km - l.depotToDelivery.km);
+      var umwegStd = Math.max(0, l.depotToPickup.hours + l.pickupToDelivery.hours - l.depotToDelivery.hours);
+      km = umwegKm + l.pickupToDelivery.km;
+      hours = umwegStd + l.pickupToDelivery.hours;
     }
 
     var vehicleCost = km * vehicleCostPerKm(input.dieselPricePerL) * share;
@@ -417,18 +420,18 @@ var CONFIG = {
     check("Fahrzeugkosten/km bei Diesel 1,65", vehicleCostPerKm(1.65), 0.541);
     check("Be-/Entladezeit => 60 Min.", handlingHours() * 60, 60);
 
-    // Etagenzuschlag: je Etage 15 € + 5 € je angefangenem m³
+    // Etagenzuschlag: je Etage 10 € + 5 € je m³ (exakt, keine Aufrundung)
     var eg = { floors: 0, elevator: false };
-    check("Etagen: kleines Teil (0,35 m³), 3. OG => 60 € (3 × 20 €)",
-      floorSurchargeEur(0.35, { floors: 3, elevator: false }, eg), 60);
-    check("Etagen: Sofa (2 m³), 2. OG => 50 € (2 × 25 €)",
-      floorSurchargeEur(2, { floors: 2, elevator: false }, eg), 50);
-    check("Etagen: volle Ladung (10 m³), 1. OG => 65 €",
-      floorSurchargeEur(10, { floors: 1, elevator: false }, eg), 65);
-    check("Etagen: mit Aufzug nur 30 % => 18 €",
-      floorSurchargeEur(0.35, { floors: 3, elevator: true }, eg), 18);
-    check("Etagen: beide Adressen zählen => 100 €",
-      floorSurchargeEur(2, { floors: 2, elevator: false }, { floors: 2, elevator: false }), 100);
+    check("Etagen: Waschmaschine (0,35 m³), 3. OG => 35,25 € (3 × 11,75 €)",
+      floorSurchargeEur(0.35, { floors: 3, elevator: false }, eg), 35.25);
+    check("Etagen: Sofa (2 m³), 2. OG => 40 € (2 × 20 €)",
+      floorSurchargeEur(2, { floors: 2, elevator: false }, eg), 40);
+    check("Etagen: volle Ladung (10 m³), 1. OG => 60 €",
+      floorSurchargeEur(10, { floors: 1, elevator: false }, eg), 60);
+    check("Etagen: mit Aufzug nur 30 % => 10,575 €",
+      floorSurchargeEur(0.35, { floors: 3, elevator: true }, eg), 10.575);
+    check("Etagen: beide Adressen zählen => 80 €",
+      floorSurchargeEur(2, { floors: 2, elevator: false }, { floors: 2, elevator: false }), 80);
     check("Etagen: Erdgeschoss => 0 €", floorSurchargeEur(2, eg, eg), 0);
 
     // Schwergut-Staffel je Einzelstück
@@ -448,8 +451,15 @@ var CONFIG = {
     var abhol = calculateBerlinPrice(berlinInput({}));
     check("Abholfahrt-km = 2×10 + 630", abhol.chargeableKm, 650);
     check("Abholfahrt-Stunden = 2×0,2 + 9", abhol.chargeableHours, 9.4);
+    // Umweg-Modell: Mehrweg (10 + 620 − 630 = 0) + Transportstrecke (620)
     var umweg = calculateBerlinPrice(berlinInput({ pickup: { lat: north.lat, lon: north.lon, floors: 0, elevator: false } }));
-    check("Umweg-km = 10 + 620 − 630", umweg.chargeableKm, 0);
+    check("Umweg-km = Mehrweg 0 + Transport 620", umweg.chargeableKm, 620);
+    check("Umweg-Stunden = 0 + 8,8", umweg.chargeableHours, 8.8);
+    var umwegMitMehrweg = calculateBerlinPrice(berlinInput({
+      pickup: { lat: north.lat, lon: north.lon, floors: 0, elevator: false },
+      legs: { depotToPickup: { km: 200, hours: 2.5 }, pickupToDelivery: { km: 500, hours: 6 }, depotToDelivery: { km: 630, hours: 9 } }
+    }));
+    check("Umweg-km = Mehrweg 70 + Transport 500", umwegMitMehrweg.chargeableKm, 570);
 
     // Anteilsberechnung: voller Fahrtpreis ab 7,5 m³, gedeckelt bei 100 %
     check("Anteil bei 1,0927 m³ => 14,57 %", abhol.volumeShare * 100, 14.5696933);
@@ -471,11 +481,11 @@ var CONFIG = {
     var helperSelf = calculateBerlinPrice(berlinInput({ helperNeeded: true, customerHelps: true }));
     check("Kunde hilft selbst => Beifahrer 0 €", helperSelf.helperCost, 0);
 
-    // Zuschläge im Gesamtpreis (1,09 m³ => aufgerundet 2 m³ => 25 €/Etage)
+    // Zuschläge im Gesamtpreis (1,0927 m³ => 10 + 5,46 = 15,46 €/Etage)
     var mitEtagen = calculateBerlinPrice(berlinInput({
       pickup: { lat: south.lat, lon: south.lon, floors: 3, elevator: false }
     }));
-    check("3. OG => +75 € Etagenzuschlag, gesamt 198 €", mitEtagen.total, 198);
+    check("3. OG => +46,39 € Etagenzuschlag, gesamt 169 €", mitEtagen.total, 169);
     var mitSchwergut = calculateBerlinPrice(berlinInput({
       items: [{ lengthCm: 100, widthCm: 100, heightCm: 100, weightKg: 70, qty: 1 }]
     }));
