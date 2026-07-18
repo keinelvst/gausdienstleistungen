@@ -1505,6 +1505,21 @@ var CONFIG = {
     }
   }
 
+  // Rechenkern nach außen sichtbar machen – für eigene Auswertungen und
+  // Preisbeispiele (z. B. in der Browser-Konsole). Ändert nichts an der Seite.
+  window.GausPreis = {
+    berlin: calculateBerlinPrice,
+    sonderfahrt: calculateSonderfahrtPrice,
+    putzservice: calculateCleaningPrice,
+    strecke: routeKm,
+    dieselpreis: getDieselPrice,
+    kostenProKm: vehicleCostPerKm,
+    etagenzuschlag: floorSurchargeEur,
+    schwergutzuschlag: heavyItemSurchargeEur,
+    modellwahl: chooseKmModel,
+    luftlinie: haversineKm
+  };
+
   document.addEventListener("DOMContentLoaded", function () {
     fillConfigPlaceholders();
     initTabs();
