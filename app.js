@@ -42,10 +42,11 @@ var CONFIG = {
                                  // => 45 Minuten je Auftrag (Abholung + Lieferung zusammen)
 
   // ── Zuschläge Etagen & Schwergut (feste Euro-Beträge) ──────────────
-  // Etagenzuschlag je Etage und Adresse = Grundbetrag + Betrag je m³ (exakt, ohne Aufrundung).
-  // Beispiel bei 10 € + 5 €/m³:  Waschmaschine 11,75 €/Etage · Sofa (1,8 m³) 19,13 € · volles Auto 57 €.
-  etagenGrundEur: 10,            // € je Etage und Adresse
-  etagenProM3Eur: 5,             // € zusätzlich je Etage, je m³ Ladung
+  // Etagenzuschlag je Etage und Adresse = Grundbetrag + Betrag je m³ (exakt, ohne Aufrundung)
+  // + Aufschlag für schwere Stücke (siehe schwergutStaffel).
+  // Beispiel bei 6 € + 4 €/m³:  5 Kartons 8,32 €/Etage · Sofa (1,8 m³) 13,30 € · volles Auto 43,74 €.
+  etagenGrundEur: 6,             // € je Etage und Adresse
+  etagenProM3Eur: 4,             // € zusätzlich je Etage, je m³ Ladung
   aufzugFaktor: 0.30,            // Aufzug vorhanden (und passt) => nur 30 % des Etagenzuschlags
 
   // Zuschlag je EINZELSTÜCK nach dessen Gewicht.
@@ -54,9 +55,9 @@ var CONFIG = {
   //   eur         = einmaliger Zuschlag für das Stück
   //   proEtageEur = zusätzlich je Etage und Adresse (schwer tragen kostet mehr Kraft)
   schwergutStaffel: [
-    { abKg: 80, eur: 80, proEtageEur: 25 },   // 80 bis unter 100 kg
-    { abKg: 60, eur: 60, proEtageEur: 15 },   // 60 bis unter 80 kg
-    { abKg: 40, eur: 30, proEtageEur: 8 }     // 40 bis unter 60 kg
+    { abKg: 80, eur: 80, proEtageEur: 20 },   // 80 bis unter 100 kg
+    { abKg: 60, eur: 60, proEtageEur: 12 },   // 60 bis unter 80 kg
+    { abKg: 40, eur: 30, proEtageEur: 6 }     // 40 bis unter 60 kg
   ],
   maxEinzelstueckKg: 100,        // ab hier kein Online-Preis mehr => "bitte anfragen"
 
@@ -448,30 +449,30 @@ var CONFIG = {
     check("Fahrzeugkosten/km bei Diesel 1,65", vehicleCostPerKm(1.65), 0.541);
     check("Be-/Entladezeit => 45 Min.", handlingHours() * 60, 45);
 
-    // Etagenzuschlag: je Etage 10 € + 5 € je m³ (exakt, keine Aufrundung)
+    // Etagenzuschlag: je Etage 6 € + 4 € je m³ (exakt, keine Aufrundung)
     var eg = { floors: 0, elevator: false };
     var leicht = [{ weightKg: 20, qty: 1 }];
-    check("Etagen: 0,35 m³ leicht, 3. OG => 35,25 € (3 × 11,75 €)",
-      floorSurchargeEur(0.35, leicht, { floors: 3, elevator: false }, eg), 35.25);
-    check("Etagen: 2 m³ leicht, 2. OG => 40 € (2 × 20 €)",
-      floorSurchargeEur(2, leicht, { floors: 2, elevator: false }, eg), 40);
-    check("Etagen: volle Ladung (10 m³) leicht, 1. OG => 60 €",
-      floorSurchargeEur(10, leicht, { floors: 1, elevator: false }, eg), 60);
-    check("Etagen: mit Aufzug nur 30 % => 10,575 €",
-      floorSurchargeEur(0.35, leicht, { floors: 3, elevator: true }, eg), 10.575);
-    check("Etagen: beide Adressen zählen => 80 €",
-      floorSurchargeEur(2, leicht, { floors: 2, elevator: false }, { floors: 2, elevator: false }), 80);
+    check("Etagen: 0,35 m³ leicht, 3. OG => 22,20 € (3 × 7,40 €)",
+      floorSurchargeEur(0.35, leicht, { floors: 3, elevator: false }, eg), 22.2);
+    check("Etagen: 2 m³ leicht, 2. OG => 28 € (2 × 14 €)",
+      floorSurchargeEur(2, leicht, { floors: 2, elevator: false }, eg), 28);
+    check("Etagen: volle Ladung (10 m³) leicht, 1. OG => 46 €",
+      floorSurchargeEur(10, leicht, { floors: 1, elevator: false }, eg), 46);
+    check("Etagen: mit Aufzug nur 30 % => 6,66 €",
+      floorSurchargeEur(0.35, leicht, { floors: 3, elevator: true }, eg), 6.66);
+    check("Etagen: beide Adressen zählen => 56 €",
+      floorSurchargeEur(2, leicht, { floors: 2, elevator: false }, { floors: 2, elevator: false }), 56);
     check("Etagen: Erdgeschoss => 0 €", floorSurchargeEur(2, leicht, eg, eg), 0);
 
-    // Schweres Stück erhöht den Etagenpreis: ab 40 kg +8 €, ab 60 kg +15 €, ab 80 kg +25 €
-    check("Etagen: 70-kg-Stück, 3. OG => 80,25 € (3 × 26,75 €)",
-      floorSurchargeEur(0.35, [{ weightKg: 70, qty: 1 }], { floors: 3, elevator: false }, eg), 80.25);
-    check("Etagen: 85-kg-Stück, 1. OG => 36,75 €",
-      floorSurchargeEur(0.35, [{ weightKg: 85, qty: 1 }], { floors: 1, elevator: false }, eg), 36.75);
-    check("Etagen: 2 Stück à 45 kg, 1. OG => 27,75 €",
-      floorSurchargeEur(0.35, [{ weightKg: 45, qty: 2 }], { floors: 1, elevator: false }, eg), 27.75);
-    check("Etagen: 39-kg-Stück zählt nicht als schwer => 11,75 €",
-      floorSurchargeEur(0.35, [{ weightKg: 39, qty: 1 }], { floors: 1, elevator: false }, eg), 11.75);
+    // Schweres Stück erhöht den Etagenpreis: ab 40 kg +6 €, ab 60 kg +12 €, ab 80 kg +20 €
+    check("Etagen: 70-kg-Stück, 3. OG => 58,20 € (3 × 19,40 €)",
+      floorSurchargeEur(0.35, [{ weightKg: 70, qty: 1 }], { floors: 3, elevator: false }, eg), 58.2);
+    check("Etagen: 85-kg-Stück, 1. OG => 27,40 €",
+      floorSurchargeEur(0.35, [{ weightKg: 85, qty: 1 }], { floors: 1, elevator: false }, eg), 27.4);
+    check("Etagen: 2 Stück à 45 kg, 1. OG => 19,40 €",
+      floorSurchargeEur(0.35, [{ weightKg: 45, qty: 2 }], { floors: 1, elevator: false }, eg), 19.4);
+    check("Etagen: 39-kg-Stück zählt nicht als schwer => 7,40 €",
+      floorSurchargeEur(0.35, [{ weightKg: 39, qty: 1 }], { floors: 1, elevator: false }, eg), 7.4);
 
     // Schwergut-Staffel je Einzelstück: ab 40 kg 30 €, ab 60 kg 60 €, ab 80 kg 80 €
     check("Schwergut 30 kg => 0 €", heavyItemSurchargeEur([{ weightKg: 30, qty: 1 }]), 0);
@@ -525,11 +526,11 @@ var CONFIG = {
     var helperSelf = calculateBerlinPrice(berlinInput({ helperNeeded: true, customerHelps: true }));
     check("Kunde hilft selbst => Beifahrer 0 €", helperSelf.helperCost, 0);
 
-    // Zuschläge im Gesamtpreis (1,0927 m³ => 10 + 5,46 = 15,46 €/Etage)
+    // Zuschläge im Gesamtpreis (1,0927 m³ => 6 + 4,37 = 10,37 €/Etage)
     var mitEtagen = calculateBerlinPrice(berlinInput({
       pickup: { lat: south.lat, lon: south.lon, floors: 3, elevator: false }
     }));
-    check("3. OG => +46,39 € Etagenzuschlag, gesamt 162 €", mitEtagen.total, 162);
+    check("3. OG => +31,11 € Etagenzuschlag, gesamt 146 €", mitEtagen.total, 146);
     var mitSchwergut = calculateBerlinPrice(berlinInput({
       items: [{ lengthCm: 100, widthCm: 100, heightCm: 100, weightKg: 70, qty: 1 }]
     }));
