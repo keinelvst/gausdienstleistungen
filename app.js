@@ -63,10 +63,8 @@ var CONFIG = {
 
   // Mengenrabatt auf die Schwergut-Zuschläge, wenn mehrere Stücke an derselben
   // Adresse getragen werden: das teuerste Stück zählt voll, jedes weitere nur
-  // zu diesem Anteil. Ab alleStueckeAbAnzahl Stücken zählt auch das teuerste
-  // nur noch anteilig.
-  weitereStueckeFaktor: 0.60,
-  alleStueckeAbAnzahl: 5,
+  // zu diesem Anteil (0,50 = halber Preis).
+  weitereStueckeFaktor: 0.50,
 
   // ── Transport nach Berlin (Beiladung) ──────────────────────────────
   pickupRadiusKm: 30,            // Abholung ≤ dieser Umkreis um das Depot => Abholfahrt-Modell
@@ -249,25 +247,15 @@ var CONFIG = {
   }
 
   // Mengenrabatt: Beträge absteigend sortiert, das teuerste Stück zählt voll,
-  // jedes weitere anteilig; ab alleStueckeAbAnzahl Stücken auch das teuerste.
-  //
-  // Damit Mehrladung den Preis niemals senken kann (sonst würde ein leichtes
-  // Beistück den Auftrag billiger machen), wird der Betrag für jede Teilmenge
-  // der teuersten Stücke berechnet und davon der höchste genommen.
+  // jedes weitere nur anteilig. Durch die Sortierung kann ein zusätzliches
+  // Stück den Betrag nie senken – Mehrladung wird also nie billiger.
   function mitMengenrabatt(betraege) {
     betraege.sort(function (a, b) { return b - a; });
-    var faktor = CONFIG.weitereStueckeFaktor;
-    var schwelle = CONFIG.alleStueckeAbAnzahl;
-    var hoechster = 0;
-    for (var k = 1; k <= betraege.length; k++) {
-      var summe = 0;
-      for (var i = 0; i < k; i++) {
-        var zaehltVoll = (i === 0 && k < schwelle);
-        summe += betraege[i] * (zaehltVoll ? 1 : faktor);
-      }
-      if (summe > hoechster) hoechster = summe;
+    var summe = 0;
+    for (var i = 0; i < betraege.length; i++) {
+      summe += betraege[i] * (i === 0 ? 1 : CONFIG.weitereStueckeFaktor);
     }
-    return hoechster;
+    return summe;
   }
 
   // Aufschlag je Etage für schwere Einzelstücke, inklusive Mengenrabatt.
@@ -494,8 +482,8 @@ var CONFIG = {
       floorSurchargeEur(0.35, [{ weightKg: 70, qty: 1 }], { floors: 3, elevator: false }, eg), 58.2);
     check("Etagen: 85-kg-Stück, 1. OG => 27,40 €",
       floorSurchargeEur(0.35, [{ weightKg: 85, qty: 1 }], { floors: 1, elevator: false }, eg), 27.4);
-    check("Etagen: 2 Stück à 45 kg, 1. OG => 17,00 € (6 + 1,4 + 9,6)",
-      floorSurchargeEur(0.35, [{ weightKg: 45, qty: 2 }], { floors: 1, elevator: false }, eg), 17);
+    check("Etagen: 2 Stück à 45 kg, 1. OG => 16,40 € (6 + 1,4 + 9)",
+      floorSurchargeEur(0.35, [{ weightKg: 45, qty: 2 }], { floors: 1, elevator: false }, eg), 16.4);
     check("Etagen: 39-kg-Stück zählt nicht als schwer => 7,40 €",
       floorSurchargeEur(0.35, [{ weightKg: 39, qty: 1 }], { floors: 1, elevator: false }, eg), 7.4);
 
@@ -508,26 +496,21 @@ var CONFIG = {
     check("Schwergut 70 kg => 60 €", heavyItemSurchargeEur([{ weightKg: 70, qty: 1 }]), 60);
     check("Schwergut 80 kg => 80 €", heavyItemSurchargeEur([{ weightKg: 80, qty: 1 }]), 80);
     check("Schwergut 99 kg => 80 €", heavyItemSurchargeEur([{ weightKg: 99, qty: 1 }]), 80);
-    // Mengenrabatt: teuerstes Stück voll, jedes weitere zu 60 %; ab 5 Stück alle zu 60 %
+    // Mengenrabatt: teuerstes Stück voll, jedes weitere zum halben Preis
     check("Mengenrabatt: einzelnes Stück bleibt voll",
       heavyItemSurchargeEur([{ weightKg: 70, qty: 1 }]), 60);
-    check("Mengenrabatt: 2 Stück à 70 kg => 60 + 36 = 96 €",
-      heavyItemSurchargeEur([{ weightKg: 70, qty: 2 }]), 96);
-    check("Mengenrabatt: 3 Stück à 70 kg => 60 + 2×36 = 132 €",
-      heavyItemSurchargeEur([{ weightKg: 70, qty: 3 }]), 132);
-    check("Mengenrabatt: 4 Stück à 70 kg => 60 + 3×36 = 168 €",
-      heavyItemSurchargeEur([{ weightKg: 70, qty: 4 }]), 168);
-    check("Mengenrabatt: ab 5 Stück zählt auch das erste zu 60 % => 5×36 = 180 €",
-      heavyItemSurchargeEur([{ weightKg: 70, qty: 5 }]), 180);
-    check("Mengenrabatt: 6 Stück à 70 kg => 6×36 = 216 €",
-      heavyItemSurchargeEur([{ weightKg: 70, qty: 6 }]), 216);
-    check("Mengenrabatt: teuerstes zählt voll (80 + 0,6×30) => 98 €",
-      heavyItemSurchargeEur([{ weightKg: 45, qty: 1 }, { weightKg: 85, qty: 1 }]), 98);
+    check("Mengenrabatt: 2 Stück à 70 kg => 60 + 30 = 90 €",
+      heavyItemSurchargeEur([{ weightKg: 70, qty: 2 }]), 90);
+    check("Mengenrabatt: 3 Stück à 70 kg => 60 + 2×30 = 120 €",
+      heavyItemSurchargeEur([{ weightKg: 70, qty: 3 }]), 120);
+    check("Mengenrabatt: 6 Stück à 70 kg => 60 + 5×30 = 210 €",
+      heavyItemSurchargeEur([{ weightKg: 70, qty: 6 }]), 210);
+    check("Mengenrabatt: teuerstes zählt voll (80 + 0,5×30) => 95 €",
+      heavyItemSurchargeEur([{ weightKg: 45, qty: 1 }, { weightKg: 85, qty: 1 }]), 95);
     check("Mengenrabatt: leichtes Beistück ändert nichts",
       heavyItemSurchargeEur([{ weightKg: 70, qty: 1 }, { weightKg: 5, qty: 1 }]), 60);
-    // Sicherung: 4 schwere Stücke plus ein leichteres darf nicht billiger werden
-    check("Mengenrabatt: Sicherung greift (4×80 kg + 1×45 kg => 224 €)",
-      heavyItemSurchargeEur([{ weightKg: 85, qty: 4 }, { weightKg: 45, qty: 1 }]), 224);
+    check("Mengenrabatt: 4×85 kg + 1×45 kg => 80 + 0,5×270 = 215 €",
+      heavyItemSurchargeEur([{ weightKg: 85, qty: 4 }, { weightKg: 45, qty: 1 }]), 215);
 
     // Modellwahl
     checkTrue("Ludwigsburg (18 km, nördlich) => Abholfahrt", chooseKmModel({ lat: 48.90, lon: 9.19 }) === "abholfahrt");
