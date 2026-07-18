@@ -61,6 +61,12 @@ var CONFIG = {
   ],
   maxEinzelstueckKg: 100,        // ab hier kein Online-Preis mehr => "bitte anfragen"
 
+  // Mengenrabatt auf Etagen- und Schwergut-Zuschläge, wenn mehrere Stücke
+  // an derselben Adresse getragen werden: das erste Stück zählt voll,
+  // jedes weitere nur zu diesem Anteil (0,70 = 70 %).
+  // Der Preis kann dadurch nie unter den eines einzelnen Stücks fallen.
+  weitereStueckeFaktor: 0.70,
+
   // ── Transport nach Berlin (Beiladung) ──────────────────────────────
   pickupRadiusKm: 30,            // Abholung ≤ dieser Umkreis um das Depot => Abholfahrt-Modell
   deliveryMaxKmFromBerlin: 50,   // Lieferadresse weiter von Berlin entfernt => "bitte anfragen"
@@ -225,19 +231,36 @@ var CONFIG = {
     return 2 * CONFIG.ladezeitProStoppMin / 60;
   }
 
-  // Aufschlag je Etage für schwere Einzelstücke (gleiche Staffel wie der Schwergut-Zuschlag).
-  function heavyItemFloorEur(items) {
-    var sum = 0;
+  // Alle Einzelbeträge einer Staffel-Spalte, ein Eintrag je Stück.
+  function schwergutBetraege(items, feld) {
+    var liste = [];
     var staffel = CONFIG.schwergutStaffel;
     for (var i = 0; i < items.length; i++) {
       for (var s = 0; s < staffel.length; s++) {
         if (items[i].weightKg >= staffel[s].abKg) {
-          sum += (staffel[s].proEtageEur || 0) * items[i].qty;
+          var betrag = staffel[s][feld] || 0;
+          for (var q = 0; q < items[i].qty; q++) liste.push(betrag);
           break;
         }
       }
     }
+    return liste;
+  }
+
+  // Mengenrabatt: das teuerste Stück zählt voll, jedes weitere nur anteilig.
+  // Nach Betrag sortiert – dadurch kann Mehrladung den Preis nie senken.
+  function mitMengenrabatt(betraege) {
+    betraege.sort(function (a, b) { return b - a; });
+    var sum = 0;
+    for (var i = 0; i < betraege.length; i++) {
+      sum += betraege[i] * (i === 0 ? 1 : CONFIG.weitereStueckeFaktor);
+    }
     return sum;
+  }
+
+  // Aufschlag je Etage für schwere Einzelstücke, inklusive Mengenrabatt.
+  function heavyItemFloorEur(items) {
+    return mitMengenrabatt(schwergutBetraege(items, "proEtageEur"));
   }
 
   // Etagenzuschlag in € über beide Adressen.
@@ -252,20 +275,9 @@ var CONFIG = {
     return fuerAdresse(pickup) + fuerAdresse(delivery);
   }
 
-  // Schwergut-Zuschlag in €: je Einzelstück nach dessen Gewicht, mal Anzahl.
-  // Die Staffel ist von schwer nach leicht sortiert – die erste passende Stufe gilt.
+  // Schwergut-Zuschlag in €: je Einzelstück nach dessen Gewicht, inklusive Mengenrabatt.
   function heavyItemSurchargeEur(items) {
-    var sum = 0;
-    var staffel = CONFIG.schwergutStaffel;
-    for (var i = 0; i < items.length; i++) {
-      for (var s = 0; s < staffel.length; s++) {
-        if (items[i].weightKg >= staffel[s].abKg) {
-          sum += staffel[s].eur * items[i].qty;
-          break;
-        }
-      }
-    }
-    return sum;
+    return mitMengenrabatt(schwergutBetraege(items, "eur"));
   }
 
   // Bereich 1: Beiladung Stuttgart → Berlin.
@@ -310,6 +322,7 @@ var CONFIG = {
         hours * CONFIG.beifahrerStundensatzEur * share
       : 0;
 
+    // Der Mengenrabatt für mehrere Stücke steckt bereits in den beiden Funktionen.
     var floorEur = floorSurchargeEur(totals.volumeM3, input.items, input.pickup, input.delivery);
     var heavyEur = heavyItemSurchargeEur(input.items);
 
@@ -469,8 +482,8 @@ var CONFIG = {
       floorSurchargeEur(0.35, [{ weightKg: 70, qty: 1 }], { floors: 3, elevator: false }, eg), 58.2);
     check("Etagen: 85-kg-Stück, 1. OG => 27,40 €",
       floorSurchargeEur(0.35, [{ weightKg: 85, qty: 1 }], { floors: 1, elevator: false }, eg), 27.4);
-    check("Etagen: 2 Stück à 45 kg, 1. OG => 19,40 €",
-      floorSurchargeEur(0.35, [{ weightKg: 45, qty: 2 }], { floors: 1, elevator: false }, eg), 19.4);
+    check("Etagen: 2 Stück à 45 kg, 1. OG => 17,60 € (6 + 4,2 mit Rabatt)",
+      floorSurchargeEur(0.35, [{ weightKg: 45, qty: 2 }], { floors: 1, elevator: false }, eg), 17.6);
     check("Etagen: 39-kg-Stück zählt nicht als schwer => 7,40 €",
       floorSurchargeEur(0.35, [{ weightKg: 39, qty: 1 }], { floors: 1, elevator: false }, eg), 7.4);
 
@@ -483,7 +496,17 @@ var CONFIG = {
     check("Schwergut 70 kg => 60 €", heavyItemSurchargeEur([{ weightKg: 70, qty: 1 }]), 60);
     check("Schwergut 80 kg => 80 €", heavyItemSurchargeEur([{ weightKg: 80, qty: 1 }]), 80);
     check("Schwergut 99 kg => 80 €", heavyItemSurchargeEur([{ weightKg: 99, qty: 1 }]), 80);
-    check("Schwergut 2 Stück à 70 kg => 120 €", heavyItemSurchargeEur([{ weightKg: 70, qty: 2 }]), 120);
+    // Mengenrabatt: teuerstes Stück voll, jedes weitere zu 70 %
+    check("Mengenrabatt: 2 Stück à 70 kg => 60 + 42 = 102 €",
+      heavyItemSurchargeEur([{ weightKg: 70, qty: 2 }]), 102);
+    check("Mengenrabatt: 3 Stück à 70 kg => 60 + 2×42 = 144 €",
+      heavyItemSurchargeEur([{ weightKg: 70, qty: 3 }]), 144);
+    check("Mengenrabatt: teuerstes zählt voll (80 + 0,7×30) => 101 €",
+      heavyItemSurchargeEur([{ weightKg: 45, qty: 1 }, { weightKg: 85, qty: 1 }]), 101);
+    check("Mengenrabatt: leichtes Beistück ändert nichts",
+      heavyItemSurchargeEur([{ weightKg: 70, qty: 1 }, { weightKg: 5, qty: 1 }]), 60);
+    check("Mengenrabatt: einzelnes Stück bleibt voll",
+      heavyItemSurchargeEur([{ weightKg: 70, qty: 1 }]), 60);
 
     // Modellwahl
     checkTrue("Ludwigsburg (18 km, nördlich) => Abholfahrt", chooseKmModel({ lat: 48.90, lon: 9.19 }) === "abholfahrt");
@@ -535,6 +558,24 @@ var CONFIG = {
       items: [{ lengthCm: 100, widthCm: 100, heightCm: 100, weightKg: 70, qty: 1 }]
     }));
     check("70-kg-Stück => +60 € Schwergut, gesamt 175 €", mitSchwergut.total, 175);
+
+    // Mehrladung darf den Preis nie senken: schweres Stück plus leichtes Beistück
+    var nurSchwer = calculateBerlinPrice(berlinInput({
+      items: [{ lengthCm: 85, widthCm: 60, heightCm: 60, weightKg: 70, qty: 1 }],
+      pickup: { lat: south.lat, lon: south.lon, floors: 3, elevator: false }
+    }));
+    var schwerPlusKarton = calculateBerlinPrice(berlinInput({
+      items: [{ lengthCm: 85, widthCm: 60, heightCm: 60, weightKg: 70, qty: 1 },
+              { lengthCm: 30, widthCm: 20, heightCm: 15, weightKg: 2, qty: 1 }],
+      pickup: { lat: south.lat, lon: south.lon, floors: 3, elevator: false }
+    }));
+    checkTrue("Beistück macht den Auftrag nicht billiger",
+      schwerPlusKarton.total >= nurSchwer.total);
+    var zweiSchwer = calculateBerlinPrice(berlinInput({
+      items: [{ lengthCm: 85, widthCm: 60, heightCm: 60, weightKg: 70, qty: 2 }],
+      pickup: { lat: south.lat, lon: south.lon, floors: 3, elevator: false }
+    }));
+    checkTrue("Zweites schweres Stück erhöht den Preis", zweiSchwer.total > nurSchwer.total);
     var zuSchwer = calculateBerlinPrice(berlinInput({
       items: [{ lengthCm: 60, widthCm: 60, heightCm: 60, weightKg: 100, qty: 1 }]
     }));
@@ -1587,6 +1628,7 @@ var CONFIG = {
     etagenzuschlag: floorSurchargeEur,
     schwergutzuschlag: heavyItemSurchargeEur,
     modellwahl: chooseKmModel,
+    mengenrabatt: mitMengenrabatt,
     luftlinie: haversineKm
   };
 
