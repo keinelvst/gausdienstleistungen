@@ -39,8 +39,21 @@ var CONFIG = {
 
   durchschnittstempoKmh: 80,     // Fahrzeit-Schätzung ohne Routen-API (Langstrecke inkl. Pausen ~85, Stadt real ~25)
   ladezeitProStoppMin: 30,       // Grundzeit Be-/Entladen je Stopp (Kurier-Branchenstandard)
-  minutenJeEtageJeBlock: 3,      // Tragezeit je Etage je angefangene 50 kg (Minuten)
-  minutenJeSchwerBlock: 5,       // Zusatzzeit je weitere angefangene 50 kg über den ersten Block
+
+  // ── Zuschläge Etagen & Schwergut (feste Euro-Beträge) ──────────────
+  // Etagenzuschlag je Etage und Adresse = Grundbetrag + Betrag je angefangenem m³.
+  // Beispiel bei 15 € + 5 €/m³:  kleines Teil 20 €/Etage · Sofa (2 m³) 25 € · volles Auto 65 €.
+  etagenGrundEur: 15,            // € je Etage und Adresse
+  etagenProM3Eur: 5,             // € zusätzlich je Etage, je angefangenem m³ Ladung
+  aufzugFaktor: 0.30,            // Aufzug vorhanden (und passt) => nur 30 % des Etagenzuschlags
+
+  // Zuschlag je EINZELSTÜCK nach dessen Gewicht (Reihenfolge: leicht -> schwer)
+  schwergutStaffel: [
+    { bisKg: 39,  eur: 0 },      // bis 39 kg: kein Aufpreis
+    { bisKg: 69,  eur: 15 },     // 40–69 kg
+    { bisKg: 99,  eur: 30 }      // 70–99 kg
+  ],
+  maxEinzelstueckKg: 100,        // ab hier kein Online-Preis mehr => "bitte anfragen"
 
   // ── Transport nach Berlin (Beiladung) ──────────────────────────────
   pickupRadiusKm: 30,            // Abholung ≤ dieser Umkreis um das Depot => Abholfahrt-Modell
@@ -48,8 +61,6 @@ var CONFIG = {
   vanVolumeM3: 10,               // Ladevolumen des Transporters in m³ ("volles Auto")
   itemMarginCm: 3,               // Sicherheitsmarge je Maß (Länge, Breite, Höhe) in cm
   maxItemDimCm: { l: 300, w: 160, h: 170 }, // größtes Einzelteil (inkl. Marge) => sonst "anfragen"
-  weightBlockKg: 50,             // Blockgröße für alle gewichtsabhängigen Tragezeiten
-  elevatorFactor: 0.05,          // Aufzug vorhanden (und passt) => nur 5 % der Etagen-Tragezeit
   minPriceEur: 60,               // Mindestauftragswert Transport
   priceValidityDays: 7,          // Hinweis "Preis gültig X Tage"
 
@@ -164,6 +175,9 @@ var CONFIG = {
     var volume = 0, weight = 0;
     for (var i = 0; i < items.length; i++) {
       var it = items[i];
+      if (it.weightKg >= CONFIG.maxEinzelstueckKg) {
+        return { ok: false, reason: "heavy", itemIndex: i };
+      }
       var dims = [it.lengthCm + margin, it.widthCm + margin, it.heightCm + margin];
       dims.sort(function (a, b) { return b - a; }); // größtes Maß zuerst
       var lims = [maxDim.l, maxDim.w, maxDim.h].sort(function (a, b) { return b - a; });
@@ -197,15 +211,36 @@ var CONFIG = {
     return n * (1 + CONFIG.gewinnaufschlagProzent / 100);
   }
 
-  // Geschätzte Be-/Entlade- und Tragezeit in Stunden (beide Stopps).
-  function handlingHoursFor(weightKg, pickup, delivery) {
-    var blocks = Math.max(1, Math.ceil(weightKg / CONFIG.weightBlockKg));
-    var effFloors = pickup.floors * (pickup.elevator ? CONFIG.elevatorFactor : 1) +
-                    delivery.floors * (delivery.elevator ? CONFIG.elevatorFactor : 1);
-    var minutes = 2 * CONFIG.ladezeitProStoppMin +
-                  effFloors * blocks * CONFIG.minutenJeEtageJeBlock +
-                  (blocks - 1) * CONFIG.minutenJeSchwerBlock;
-    return minutes / 60;
+  // Be-/Entladezeit in Stunden (Grundzeit je Stopp; Etagen und Schwergut
+  // werden separat als feste Euro-Zuschläge berechnet).
+  function handlingHours() {
+    return 2 * CONFIG.ladezeitProStoppMin / 60;
+  }
+
+  // Etagenzuschlag in € über beide Adressen.
+  // Je Etage: Grundbetrag + Betrag je angefangenem m³; mit Aufzug nur der Aufzug-Faktor.
+  function floorSurchargeEur(volumeM3, pickup, delivery) {
+    var proEtage = CONFIG.etagenGrundEur +
+                   CONFIG.etagenProM3Eur * Math.max(1, Math.ceil(volumeM3));
+    function fuerAdresse(a) {
+      return a.floors * proEtage * (a.elevator ? CONFIG.aufzugFaktor : 1);
+    }
+    return fuerAdresse(pickup) + fuerAdresse(delivery);
+  }
+
+  // Schwergut-Zuschlag in €: je Einzelstück nach dessen Gewicht, mal Anzahl.
+  function heavyItemSurchargeEur(items) {
+    var sum = 0;
+    for (var i = 0; i < items.length; i++) {
+      var staffel = CONFIG.schwergutStaffel;
+      for (var s = 0; s < staffel.length; s++) {
+        if (items[i].weightKg <= staffel[s].bisKg) {
+          sum += staffel[s].eur * items[i].qty;
+          break;
+        }
+      }
+    }
+    return sum;
   }
 
   // Bereich 1: Beiladung Stuttgart → Berlin.
@@ -235,17 +270,21 @@ var CONFIG = {
     var vehicleCost = km * vehicleCostPerKm(input.dieselPricePerL) * share;
     var driverDriveCost = hours * CONFIG.fahrerStundensatzEur * share;
 
-    var handlingHours = handlingHoursFor(totals.weightKg, input.pickup, input.delivery);
-    var handlingSelfCost = handlingHours * CONFIG.fahrerStundensatzEur;
+    var handlingH = handlingHours();
+    var handlingSelfCost = handlingH * CONFIG.fahrerStundensatzEur;
 
-    // Beifahrer: Tragezeit voll + Fahrzeit anteilig nach Ladevolumen
+    // Beifahrer: Ladezeit voll + Fahrzeit anteilig nach Ladevolumen
     // (er sitzt die Tour ja mit im Auto, geteilt durch alle Kunden der Fahrt)
     var helperSelfCost = (input.helperNeeded && !input.customerHelps)
-      ? handlingHours * CONFIG.beifahrerStundensatzEur +
+      ? handlingH * CONFIG.beifahrerStundensatzEur +
         hours * CONFIG.beifahrerStundensatzEur * share
       : 0;
 
-    var selbstkosten = vehicleCost + driverDriveCost + handlingSelfCost + helperSelfCost;
+    var floorEur = floorSurchargeEur(totals.volumeM3, input.pickup, input.delivery);
+    var heavyEur = heavyItemSurchargeEur(input.items);
+
+    var selbstkosten = vehicleCost + driverDriveCost + handlingSelfCost + helperSelfCost +
+                       floorEur + heavyEur;
     var subtotal = applyMargin(selbstkosten);
     var minApplied = subtotal < CONFIG.minPriceEur;
     var total = Math.ceil(Math.max(subtotal, CONFIG.minPriceEur));
@@ -263,7 +302,9 @@ var CONFIG = {
       fahrtCost: applyMargin(vehicleCost + driverDriveCost),
       handlingCost: applyMargin(handlingSelfCost),
       helperCost: applyMargin(helperSelfCost),
-      handlingMinutes: handlingHours * 60,
+      floorCost: applyMargin(floorEur),
+      heavyCost: applyMargin(heavyEur),
+      handlingMinutes: handlingH * 60,
       selbstkosten: selbstkosten,
       subtotal: subtotal,
       minApplied: minApplied,
@@ -371,14 +412,27 @@ var CONFIG = {
 
     // Kostenbausteine: Verbrauch 14 l, 0,065+0,09+0,055 €/km, Maut 0, Werbung 4000/40000 = 0,10 €/km
     check("Fahrzeugkosten/km bei Diesel 1,65", vehicleCostPerKm(1.65), 0.541);
+    check("Be-/Entladezeit => 60 Min.", handlingHours() * 60, 60);
 
-    // Be-/Entlade-/Tragezeit (Grundzeit 2×30 Min.)
-    check("Handling 10 kg EG→EG => 60 Min.",
-      handlingHoursFor(10, { floors: 0, elevator: false }, { floors: 0, elevator: false }) * 60, 60);
-    check("Handling 80 kg, 3. OG ohne Aufzug => 83 Min. (60 + 3×2×3 + 5)",
-      handlingHoursFor(80, { floors: 3, elevator: false }, { floors: 0, elevator: false }) * 60, 83);
-    check("Handling 80 kg, 3. OG mit Aufzug => 65,9 Min. (5 %-Faktor)",
-      handlingHoursFor(80, { floors: 3, elevator: true }, { floors: 0, elevator: false }) * 60, 65.9);
+    // Etagenzuschlag: je Etage 15 € + 5 € je angefangenem m³
+    var eg = { floors: 0, elevator: false };
+    check("Etagen: kleines Teil (0,35 m³), 3. OG => 60 € (3 × 20 €)",
+      floorSurchargeEur(0.35, { floors: 3, elevator: false }, eg), 60);
+    check("Etagen: Sofa (2 m³), 2. OG => 50 € (2 × 25 €)",
+      floorSurchargeEur(2, { floors: 2, elevator: false }, eg), 50);
+    check("Etagen: volle Ladung (10 m³), 1. OG => 65 €",
+      floorSurchargeEur(10, { floors: 1, elevator: false }, eg), 65);
+    check("Etagen: mit Aufzug nur 30 % => 18 €",
+      floorSurchargeEur(0.35, { floors: 3, elevator: true }, eg), 18);
+    check("Etagen: beide Adressen zählen => 100 €",
+      floorSurchargeEur(2, { floors: 2, elevator: false }, { floors: 2, elevator: false }), 100);
+    check("Etagen: Erdgeschoss => 0 €", floorSurchargeEur(2, eg, eg), 0);
+
+    // Schwergut-Staffel je Einzelstück
+    check("Schwergut 30 kg => 0 €", heavyItemSurchargeEur([{ weightKg: 30, qty: 1 }]), 0);
+    check("Schwergut 45 kg => 15 €", heavyItemSurchargeEur([{ weightKg: 45, qty: 1 }]), 15);
+    check("Schwergut 70 kg => 30 €", heavyItemSurchargeEur([{ weightKg: 70, qty: 1 }]), 30);
+    check("Schwergut 2 Stück à 70 kg => 60 €", heavyItemSurchargeEur([{ weightKg: 70, qty: 2 }]), 60);
 
     // Modellwahl
     checkTrue("Ludwigsburg (18 km, nördlich) => Abholfahrt", chooseKmModel({ lat: 48.90, lon: 9.19 }) === "abholfahrt");
@@ -401,11 +455,25 @@ var CONFIG = {
     check("Beispiel: Selbstkosten 99,24 €", abhol.subtotal, 99.24065);
     check("Beispiel: Gesamtpreis 100 €", abhol.total, 100);
 
-    // Beifahrer: Tragezeit voll (30 €) + Fahrzeit anteilig (9,4×30×10,93 % = 30,81 €)
+    // Beifahrer: Ladezeit voll (30 €) + Fahrzeit anteilig (9,4×30×10,93 % = 30,81 €)
     var helper = calculateBerlinPrice(berlinInput({ helperNeeded: true, customerHelps: false }));
     check("Beifahrer => +60,81 €, gesamt 161 €", helper.total, 161);
     var helperSelf = calculateBerlinPrice(berlinInput({ helperNeeded: true, customerHelps: true }));
     check("Kunde hilft selbst => Beifahrer 0 €", helperSelf.helperCost, 0);
+
+    // Zuschläge im Gesamtpreis (1,09 m³ => aufgerundet 2 m³ => 25 €/Etage)
+    var mitEtagen = calculateBerlinPrice(berlinInput({
+      pickup: { lat: south.lat, lon: south.lon, floors: 3, elevator: false }
+    }));
+    check("3. OG => +75 € Etagenzuschlag, gesamt 175 €", mitEtagen.total, 175);
+    var mitSchwergut = calculateBerlinPrice(berlinInput({
+      items: [{ lengthCm: 100, widthCm: 100, heightCm: 100, weightKg: 70, qty: 1 }]
+    }));
+    check("70-kg-Stück => +30 € Schwergut, gesamt 130 €", mitSchwergut.total, 130);
+    var zuSchwer = calculateBerlinPrice(berlinInput({
+      items: [{ lengthCm: 60, widthCm: 60, heightCm: 60, weightKg: 100, qty: 1 }]
+    }));
+    checkTrue("100-kg-Stück => reason 'heavy'", zuSchwer.ok === false && zuSchwer.reason === "heavy");
 
     // Gewinnaufschlag: 25 % auf 99,24 € Selbstkosten => 124,05 => 125 €
     var savedMargin = CONFIG.gewinnaufschlagProzent;
@@ -920,7 +988,9 @@ var CONFIG = {
       lines.push("Strecke: " + fmtKm(result.chargeableKm) + " (" +
                  (result.model === "abholfahrt" ? "Abholfahrt" : "Umweg") + ")");
       lines.push("Fahrt: " + fmtEur(result.fahrtCost) +
-                 " | Verladen/Tragen: " + fmtEur(result.handlingCost) +
+                 " | Verladen: " + fmtEur(result.handlingCost) +
+                 " | Etagen: " + fmtEur(result.floorCost) +
+                 " | Schwergut: " + fmtEur(result.heavyCost) +
                  " | Beifahrer: " + fmtEur(result.helperCost));
       lines.push("GESAMT: " + fmtEur0(result.total));
       lines.push("(Diesel " + fmtNum(result.dieselPricePerL, 2) + " €/l, Stand " +
@@ -928,6 +998,8 @@ var CONFIG = {
                  " Tage" + (flags.estimated ? ", Entfernung geschätzt" : "") + ")");
     } else if (result && result.reason === "volume") {
       lines.push("Über " + CONFIG.vanVolumeM3 + " m³ – bitte um individuelles Angebot.");
+    } else if (result && result.reason === "heavy") {
+      lines.push("Einzelstück ab " + CONFIG.maxEinzelstueckKg + " kg – bitte um individuelles Angebot.");
     } else if (result && result.reason === "oversize") {
       lines.push("Übergröße – bitte um individuelles Angebot.");
     } else if (flags.farDelivery) {
@@ -1049,12 +1121,19 @@ var CONFIG = {
           });
 
           if (!result.ok) {
-            var msg = result.reason === "volume"
-              ? "Ihre Sendung ist größer als " + CONFIG.vanVolumeM3 + " m³ und passt leider nicht als Beiladung " +
-                "in unseren Transporter. Gerne machen wir Ihnen ein individuelles Angebot!"
-              : "Ein Gegenstand überschreitet unsere maximalen Einzelmaße (" +
-                CONFIG.maxItemDimCm.l + " × " + CONFIG.maxItemDimCm.w + " × " + CONFIG.maxItemDimCm.h +
-                " cm). Gerne prüfen wir das individuell!";
+            var msg;
+            if (result.reason === "volume") {
+              msg = "Ihre Sendung ist größer als " + CONFIG.vanVolumeM3 + " m³ und passt leider nicht als Beiladung " +
+                    "in unseren Transporter. Gerne machen wir Ihnen ein individuelles Angebot!";
+            } else if (result.reason === "heavy") {
+              msg = "Ein Gegenstand wiegt " + CONFIG.maxEinzelstueckKg + " kg oder mehr. Solche Schwertransporte " +
+                    "planen wir persönlich mit Ihnen – so stellen wir sicher, dass genug Helfer und die richtige " +
+                    "Ausrüstung dabei sind. Fragen Sie uns einfach an!";
+            } else {
+              msg = "Ein Gegenstand überschreitet unsere maximalen Einzelmaße (" +
+                    CONFIG.maxItemDimCm.l + " × " + CONFIG.maxItemDimCm.w + " × " + CONFIG.maxItemDimCm.h +
+                    " cm). Gerne prüfen wir das individuell!";
+            }
             var waBig = transportWaMessage(data, result, { estimated: estimated });
             showResult(resultEl,
               '<h3 class="result-title">Bitte individuell anfragen</h3>' +
@@ -1066,9 +1145,11 @@ var CONFIG = {
             { label: "Fahrt (" + fmtKm(result.chargeableKm) + ", anteilig " +
                      fmtNum(result.volumeShare * 100, 1) + " % Ladevolumen)",
               amount: fmtEur(result.fahrtCost) },
-            { label: "Be- & Entladen, Tragen (ca. " + Math.round(result.handlingMinutes) + " Min., " +
-                     fmtNum(result.weightKg, 0) + " kg)",
+            { label: "Be- & Entladen (ca. " + Math.round(result.handlingMinutes) + " Min.)",
               amount: fmtEur(result.handlingCost) },
+            { label: "Etagenzuschlag (Tragen über Treppen)", amount: fmtEur(result.floorCost) },
+            { label: "Schwere Gegenstände (" + fmtNum(result.weightKg, 0) + " kg gesamt)",
+              amount: fmtEur(result.heavyCost) },
             { label: "Beifahrer / zweiter Träger", amount: fmtEur(result.helperCost) }
           ];
           if (result.minApplied) {
