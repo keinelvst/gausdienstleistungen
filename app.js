@@ -58,7 +58,9 @@ var CONFIG = {
   // ── Transport nach Berlin (Beiladung) ──────────────────────────────
   pickupRadiusKm: 30,            // Abholung ≤ dieser Umkreis um das Depot => Abholfahrt-Modell
   deliveryMaxKmFromBerlin: 50,   // Lieferadresse weiter von Berlin entfernt => "bitte anfragen"
-  vanVolumeM3: 10,               // Ladevolumen des Transporters in m³ ("volles Auto")
+  vanVolumeM3: 10,               // Ladevolumen des Transporters in m³ ("volles Auto") – mehr passt nicht rein
+  vollpreisAbM3: 7.5,            // ab dieser Ladung zahlt der Kunde die Fahrt zu 100 %
+                                 // (Rest geht für Packlücken, Sperriges und Gänge drauf)
   itemMarginCm: 3,               // Sicherheitsmarge je Maß (Länge, Breite, Höhe) in cm
   maxItemDimCm: { l: 300, w: 160, h: 170 }, // größtes Einzelteil (inkl. Marge) => sonst "anfragen"
   minPriceEur: 60,               // Mindestauftragswert Transport
@@ -255,7 +257,8 @@ var CONFIG = {
       return { ok: false, reason: "volume", volumeM3: totals.volumeM3, weightKg: totals.weightKg };
     }
 
-    var share = Math.min(totals.volumeM3 / CONFIG.vanVolumeM3, 1);
+    // Anteil an Fahrzeug und Fahrzeit: ab vollpreisAbM3 zahlt der Kunde die ganze Fahrt.
+    var share = Math.min(totals.volumeM3 / CONFIG.vollpreisAbM3, 1);
     var model = chooseKmModel(input.pickup);
     var l = input.legs;
     var km, hours;
@@ -448,16 +451,23 @@ var CONFIG = {
     var umweg = calculateBerlinPrice(berlinInput({ pickup: { lat: north.lat, lon: north.lon, floors: 0, elevator: false } }));
     check("Umweg-km = 10 + 620 − 630", umweg.chargeableKm, 0);
 
-    // Beiladung Berlin, komplettes Beispiel (1,0927 m³ => 10,93 % Anteil):
-    // Fahrzeug 650×0,541×Anteil = 38,43 € | Fahrer 9,4×30×Anteil = 30,81 €
-    // Handling 60 Min. × 30 € = 30 € => 99,24 € Selbstkosten => 100 € (aufgerundet)
-    check("Beispiel: Volumen 1,0927 m³", abhol.volumeM3, 1.092727);
-    check("Beispiel: Selbstkosten 99,24 €", abhol.subtotal, 99.24065);
-    check("Beispiel: Gesamtpreis 100 €", abhol.total, 100);
+    // Anteilsberechnung: voller Fahrtpreis ab 7,5 m³, gedeckelt bei 100 %
+    check("Anteil bei 1,0927 m³ => 14,57 %", abhol.volumeShare * 100, 14.5696933);
+    var grosseLadung = calculateBerlinPrice(berlinInput({
+      items: [{ lengthCm: 60, widthCm: 40, heightCm: 40, weightKg: 10, qty: 70 }]
+    }));
+    checkTrue("8,15 m³ => voller Fahrtpreis (Anteil 100 %)", grosseLadung.volumeShare === 1);
 
-    // Beifahrer: Ladezeit voll (30 €) + Fahrzeit anteilig (9,4×30×10,93 % = 30,81 €)
+    // Beiladung Berlin, komplettes Beispiel (1,0927 m³ => 14,57 % Anteil):
+    // Fahrzeug 650×0,541×Anteil = 51,23 € | Fahrer 9,4×30×Anteil = 41,09 €
+    // Verladen 60 Min. × 30 € = 30 € => 122,32 € Selbstkosten => 123 € (aufgerundet)
+    check("Beispiel: Volumen 1,0927 m³", abhol.volumeM3, 1.092727);
+    check("Beispiel: Selbstkosten 122,32 €", abhol.subtotal, 122.32085);
+    check("Beispiel: Gesamtpreis 123 €", abhol.total, 123);
+
+    // Beifahrer: Ladezeit voll (30 €) + Fahrzeit anteilig (9,4×30×14,57 % = 41,09 €)
     var helper = calculateBerlinPrice(berlinInput({ helperNeeded: true, customerHelps: false }));
-    check("Beifahrer => +60,81 €, gesamt 161 €", helper.total, 161);
+    check("Beifahrer => +71,09 €, gesamt 194 €", helper.total, 194);
     var helperSelf = calculateBerlinPrice(berlinInput({ helperNeeded: true, customerHelps: true }));
     check("Kunde hilft selbst => Beifahrer 0 €", helperSelf.helperCost, 0);
 
@@ -465,20 +475,20 @@ var CONFIG = {
     var mitEtagen = calculateBerlinPrice(berlinInput({
       pickup: { lat: south.lat, lon: south.lon, floors: 3, elevator: false }
     }));
-    check("3. OG => +75 € Etagenzuschlag, gesamt 175 €", mitEtagen.total, 175);
+    check("3. OG => +75 € Etagenzuschlag, gesamt 198 €", mitEtagen.total, 198);
     var mitSchwergut = calculateBerlinPrice(berlinInput({
       items: [{ lengthCm: 100, widthCm: 100, heightCm: 100, weightKg: 70, qty: 1 }]
     }));
-    check("70-kg-Stück => +30 € Schwergut, gesamt 130 €", mitSchwergut.total, 130);
+    check("70-kg-Stück => +30 € Schwergut, gesamt 153 €", mitSchwergut.total, 153);
     var zuSchwer = calculateBerlinPrice(berlinInput({
       items: [{ lengthCm: 60, widthCm: 60, heightCm: 60, weightKg: 100, qty: 1 }]
     }));
     checkTrue("100-kg-Stück => reason 'heavy'", zuSchwer.ok === false && zuSchwer.reason === "heavy");
 
-    // Gewinnaufschlag: 25 % auf 99,24 € Selbstkosten => 124,05 => 125 €
+    // Gewinnaufschlag: 25 % auf 122,32 € Selbstkosten => 152,90 => 153 €
     var savedMargin = CONFIG.gewinnaufschlagProzent;
     CONFIG.gewinnaufschlagProzent = 25;
-    check("Gewinnaufschlag 25 % => 125 €", calculateBerlinPrice(berlinInput({})).total, 125);
+    check("Gewinnaufschlag 25 % => 153 €", calculateBerlinPrice(berlinInput({})).total, 153);
     CONFIG.gewinnaufschlagProzent = savedMargin;
 
     // Passt-nicht & Übergröße
@@ -1142,8 +1152,8 @@ var CONFIG = {
           }
 
           var lines = [
-            { label: "Fahrt (" + fmtKm(result.chargeableKm) + ", anteilig " +
-                     fmtNum(result.volumeShare * 100, 1) + " % Ladevolumen)",
+            { label: "Fahrt (" + fmtKm(result.chargeableKm) + ", Ihr Anteil " +
+                     fmtNum(result.volumeShare * 100, 1) + " %)",
               amount: fmtEur(result.fahrtCost) },
             { label: "Be- & Entladen (ca. " + Math.round(result.handlingMinutes) + " Min.)",
               amount: fmtEur(result.handlingCost) },
@@ -1158,7 +1168,10 @@ var CONFIG = {
 
           var badges = [
             { text: result.model === "abholfahrt" ? "Abholfahrt-Modell" : "Umweg-Modell (liegt auf unserer Route)" },
-            { text: "Ladevolumen: " + fmtNum(result.volumeM3, 2) + " m³ von " + CONFIG.vanVolumeM3 + " m³" }
+            { text: result.volumeShare >= 1
+                ? "Ladung: " + fmtNum(result.volumeM3, 2) + " m³ – voller Fahrtpreis"
+                : "Ladung: " + fmtNum(result.volumeM3, 2) + " m³ (voller Fahrtpreis ab " +
+                  fmtNum(CONFIG.vollpreisAbM3, 1) + " m³)" }
           ];
           badges.push(fuel.isFallback
             ? { text: "Diesel: Standardwert " + fmtNum(fuel.price, 2) + " €/l", warn: true }
