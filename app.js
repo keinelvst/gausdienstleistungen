@@ -17,26 +17,41 @@ var CONFIG = {
   depot:       { lat: 48.7414, lon: 9.1344, label: "Engelboldstraße, 70569 Stuttgart" },
   destination: { lat: 52.5200, lon: 13.4050, label: "Berlin" },
 
+  // ── KOSTENKALKULATION (Selbstkosten) ───────────────────────────────
+  // Der Preis deckt zuerst ALLE Kosten, danach kommt der Gewinnaufschlag.
+  //
+  // >>> GEWINN EINSTELLEN: Prozent-Aufschlag auf die Selbstkosten. <<<
+  // 0 = reine Kostendeckung (dein 30-€/h-Fahrerlohn ist dabei schon drin).
+  // Branchenüblich sind 10–15 % (Kalkulations-Empfehlung: 12).
+  gewinnaufschlagProzent: 0,
+
+  fahrerStundensatzEur: 30,      // dein Lohn als Fahrer, je Stunde
+  beifahrerStundensatzEur: 30,   // Lohn Beifahrer/zweiter Träger, je Stunde
+
+  // Kostensätze laut Recherche 07/2026 (bfp-Fuhrparkdaten, ADAC, Marktdaten):
+  verbrauchLper100km: 10.5,      // Diesel real, beladen, Langstrecke (Spanne 9–12 l)
+  verschleissEurProKm: 0.065,    // Wartung + Verschleiß + Reifen (5–8 ct, bei altem Fahrzeug eher 0.08)
+  abschreibungEurProKm: 0.09,    // Wertverlust Gebraucht-Transporter (6–12 ct je nach Kaufpreis)
+  fixkostenEurProKm: 0.055,      // Versicherung ~1.500 €, Steuer 210 €, HU — bei 40.000 km/Jahr
+  mautEurProKm: 0,               // Rechtsstand 2026: mautfrei BIS 3,5 t zGG (darüber: ~0.151 eintragen)
+
+  durchschnittstempoKmh: 80,     // Fahrzeit-Schätzung ohne Routen-API (Langstrecke inkl. Pausen ~85, Stadt real ~25)
+  ladezeitProStoppMin: 30,       // Grundzeit Be-/Entladen je Stopp (Kurier-Branchenstandard)
+  minutenJeEtageJeBlock: 3,      // Tragezeit je Etage je angefangene 50 kg (Minuten)
+  minutenJeSchwerBlock: 5,       // Zusatzzeit je weitere angefangene 50 kg über den ersten Block
+
   // ── Transport nach Berlin (Beiladung) ──────────────────────────────
   pickupRadiusKm: 30,            // Abholung ≤ dieser Umkreis um das Depot => Abholfahrt-Modell
   deliveryMaxKmFromBerlin: 50,   // Lieferadresse weiter von Berlin entfernt => "bitte anfragen"
-  dieselSurchargePerLitre: 0.10, // Aufschlag auf den Dieselpreis => €/km bei vollem Transporter
   vanVolumeM3: 10,               // Ladevolumen des Transporters in m³ ("volles Auto")
   itemMarginCm: 3,               // Sicherheitsmarge je Maß (Länge, Breite, Höhe) in cm
   maxItemDimCm: { l: 300, w: 160, h: 170 }, // größtes Einzelteil (inkl. Marge) => sonst "anfragen"
-  freeWeightKg: 50,              // bis hierhin kein Gewichtszuschlag
-  weightBlockKg: 50,             // Blockgröße für alle gewichtsabhängigen Zuschläge
-  weightBlockSurchargeEur: 10,   // € je angefangenem Block ÜBER freeWeightKg
-  floorSurchargeEur: 5,          // € je Etage je angefangenem Gewichts-Block
-  elevatorFactor: 0.05,          // Aufzug vorhanden (und passt) => nur 5 % des Etagenzuschlags
-  helperBaseEur: 30,             // Mindestpreis 2. Träger
-  helperPerBlockEur: 10,         // € je weiterem angefangenen Gewichts-Block
-  helperPerFloorEur: 5,          // € je effektiver Etage (nach Aufzug-Faktor)
+  weightBlockKg: 50,             // Blockgröße für alle gewichtsabhängigen Tragezeiten
+  elevatorFactor: 0.05,          // Aufzug vorhanden (und passt) => nur 5 % der Etagen-Tragezeit
   minPriceEur: 60,               // Mindestauftragswert Transport
   priceValidityDays: 7,          // Hinweis "Preis gültig X Tage"
 
   // ── Sonderfahrten ──────────────────────────────────────────────────
-  sonderfahrtPerKmEur: 0.80,     // fester km-Preis (alle km: Depot→Abholung→Ziel→Depot)
   sonderfahrtMinPriceEur: 60,    // Mindestpreis Sonderfahrt
 
   // ── Putzservice ────────────────────────────────────────────────────
@@ -65,7 +80,7 @@ var CONFIG = {
   // Tankerkönig: kostenloser Key auf tankerkoenig.de.
   // Leer lassen => fallbackDieselPrice wird verwendet.
   tankerkoenigApiKey: "",
-  fallbackDieselPrice: 1.65,     // €/l wenn kein Key oder API nicht erreichbar
+  fallbackDieselPrice: 1.90,     // €/l wenn kein Key oder API nicht erreichbar (2026-Mittel, brutto)
   fuelCacheMinutes: 60,          // Dieselpreis so lange zwischenspeichern
   fuelSearchRadiusKm: 5,         // Tankstellensuche im Umkreis um das Depot
   roadFactor: 1.3                // Luftlinie × Faktor ≈ Straßen-km (Fallback)
@@ -164,7 +179,34 @@ var CONFIG = {
     return (withinRadius || isSouth) ? "abholfahrt" : "umweg";
   }
 
+  // Fahrzeugkosten je Kilometer (ohne Fahrerlohn):
+  // Diesel × Verbrauch + Verschleiß + Abschreibung + Fixkosten-Umlage + Maut.
+  function vehicleCostPerKm(dieselPricePerL) {
+    return dieselPricePerL * CONFIG.verbrauchLper100km / 100 +
+           CONFIG.verschleissEurProKm + CONFIG.abschreibungEurProKm +
+           CONFIG.fixkostenEurProKm + CONFIG.mautEurProKm;
+  }
+
+  // Gewinnaufschlag auf die Selbstkosten.
+  function applyMargin(n) {
+    return n * (1 + CONFIG.gewinnaufschlagProzent / 100);
+  }
+
+  // Geschätzte Be-/Entlade- und Tragezeit in Stunden (beide Stopps).
+  function handlingHoursFor(weightKg, pickup, delivery) {
+    var blocks = Math.max(1, Math.ceil(weightKg / CONFIG.weightBlockKg));
+    var effFloors = pickup.floors * (pickup.elevator ? CONFIG.elevatorFactor : 1) +
+                    delivery.floors * (delivery.elevator ? CONFIG.elevatorFactor : 1);
+    var minutes = 2 * CONFIG.ladezeitProStoppMin +
+                  effFloors * blocks * CONFIG.minutenJeEtageJeBlock +
+                  (blocks - 1) * CONFIG.minutenJeSchwerBlock;
+    return minutes / 60;
+  }
+
   // Bereich 1: Beiladung Stuttgart → Berlin.
+  // Selbstkosten = Fahrzeug + Fahrerzeit (beides anteilig nach Ladevolumen)
+  //              + Be-/Entladen/Tragen (voll) + ggf. Beifahrer (voll),
+  // darauf der Gewinnaufschlag, dann Mindestpreis.
   function calculateBerlinPrice(input) {
     var totals = computeItemsTotals(input.items);
     if (!totals.ok) return totals;
@@ -175,36 +217,28 @@ var CONFIG = {
 
     var share = Math.min(totals.volumeM3 / CONFIG.vanVolumeM3, 1);
     var model = chooseKmModel(input.pickup);
-    var d = input.distancesKm;
-    var km = model === "abholfahrt"
-      ? 2 * d.depotToPickup + d.depotToDelivery
-      : Math.max(0, d.depotToPickup + d.pickupToDelivery - d.depotToDelivery);
-
-    var perKm = input.dieselPricePerL + CONFIG.dieselSurchargePerLitre;
-    var basePrice = km * perKm * share;
-
-    var W = totals.weightKg;
-    var weightSurcharge = Math.ceil(Math.max(0, W - CONFIG.freeWeightKg) / CONFIG.weightBlockKg) *
-                          CONFIG.weightBlockSurchargeEur;
-
-    var blocks = Math.max(1, Math.ceil(W / CONFIG.weightBlockKg));
-    function floorCost(floors, elevator) {
-      return floors * blocks * CONFIG.floorSurchargeEur * (elevator ? CONFIG.elevatorFactor : 1);
-    }
-    var floorSurcharge = floorCost(input.pickup.floors, input.pickup.elevator) +
-                         floorCost(input.delivery.floors, input.delivery.elevator);
-
-    var helperSurcharge = 0;
-    if (input.helperNeeded && !input.customerHelps) {
-      var effFloors = input.pickup.floors * (input.pickup.elevator ? CONFIG.elevatorFactor : 1) +
-                      input.delivery.floors * (input.delivery.elevator ? CONFIG.elevatorFactor : 1);
-      helperSurcharge = Math.max(
-        CONFIG.helperBaseEur,
-        CONFIG.helperBaseEur + (blocks - 1) * CONFIG.helperPerBlockEur + effFloors * CONFIG.helperPerFloorEur
-      );
+    var l = input.legs;
+    var km, hours;
+    if (model === "abholfahrt") {
+      km = 2 * l.depotToPickup.km + l.depotToDelivery.km;
+      hours = 2 * l.depotToPickup.hours + l.depotToDelivery.hours;
+    } else {
+      km = Math.max(0, l.depotToPickup.km + l.pickupToDelivery.km - l.depotToDelivery.km);
+      hours = Math.max(0, l.depotToPickup.hours + l.pickupToDelivery.hours - l.depotToDelivery.hours);
     }
 
-    var subtotal = basePrice + weightSurcharge + floorSurcharge + helperSurcharge;
+    var vehicleCost = km * vehicleCostPerKm(input.dieselPricePerL) * share;
+    var driverDriveCost = hours * CONFIG.fahrerStundensatzEur * share;
+
+    var handlingHours = handlingHoursFor(totals.weightKg, input.pickup, input.delivery);
+    var handlingSelfCost = handlingHours * CONFIG.fahrerStundensatzEur;
+
+    var helperSelfCost = (input.helperNeeded && !input.customerHelps)
+      ? handlingHours * CONFIG.beifahrerStundensatzEur
+      : 0;
+
+    var selbstkosten = vehicleCost + driverDriveCost + handlingSelfCost + helperSelfCost;
+    var subtotal = applyMargin(selbstkosten);
     var minApplied = subtotal < CONFIG.minPriceEur;
     var total = Math.ceil(Math.max(subtotal, CONFIG.minPriceEur));
 
@@ -212,32 +246,52 @@ var CONFIG = {
       ok: true,
       model: model,
       chargeableKm: km,
+      chargeableHours: hours,
       volumeM3: totals.volumeM3,
       volumeShare: share,
-      weightKg: W,
+      weightKg: totals.weightKg,
       dieselPricePerL: input.dieselPricePerL,
-      basePrice: basePrice,
-      weightSurcharge: weightSurcharge,
-      floorSurcharge: floorSurcharge,
-      helperSurcharge: helperSurcharge,
+      // Kundensicht: Zeilen inkl. anteiligem Gewinnaufschlag
+      fahrtCost: applyMargin(vehicleCost + driverDriveCost),
+      handlingCost: applyMargin(handlingSelfCost),
+      helperCost: applyMargin(helperSelfCost),
+      handlingMinutes: handlingHours * 60,
+      selbstkosten: selbstkosten,
       subtotal: subtotal,
       minApplied: minApplied,
       total: total
     };
   }
 
-  // Bereich 2: Sonderfahrt (exklusiver Transporter, fester km-Preis).
+  // Bereich 2: Sonderfahrt (exklusiver Transporter).
+  // Selbstkosten = Fahrzeug (alle km) + Fahrer (Fahrzeit + Ladezeit)
+  //              + ggf. Beifahrer (gleiche Zeit), darauf Gewinnaufschlag.
   function calculateSonderfahrtPrice(input) {
-    var legs = input.legsKm;
-    var km = legs.depotToPickup + legs.pickupToDest + legs.destToDepot;
-    var kmPrice = km * CONFIG.sonderfahrtPerKmEur;
-    var minApplied = kmPrice < CONFIG.sonderfahrtMinPriceEur;
-    var total = Math.ceil(Math.max(kmPrice, CONFIG.sonderfahrtMinPriceEur));
+    var l = input.legs;
+    var km = l.depotToPickup.km + l.pickupToDest.km + l.destToDepot.km;
+    var driveHours = l.depotToPickup.hours + l.pickupToDest.hours + l.destToDepot.hours;
+    var loadHours = 2 * CONFIG.ladezeitProStoppMin / 60;
+    var totalHours = driveHours + loadHours;
+
+    var vehicleCost = km * vehicleCostPerKm(input.dieselPricePerL);
+    var driverCost = totalHours * CONFIG.fahrerStundensatzEur;
+    var helperCost = input.helperNeeded ? totalHours * CONFIG.beifahrerStundensatzEur : 0;
+
+    var selbstkosten = vehicleCost + driverCost + helperCost;
+    var subtotal = applyMargin(selbstkosten);
+    var minApplied = subtotal < CONFIG.sonderfahrtMinPriceEur;
+    var total = Math.ceil(Math.max(subtotal, CONFIG.sonderfahrtMinPriceEur));
+
     return {
       ok: true,
       totalKm: km,
-      legsKm: legs,
-      kmPrice: kmPrice,
+      totalHours: totalHours,
+      dieselPricePerL: input.dieselPricePerL,
+      vehicleCost: applyMargin(vehicleCost),
+      driverCost: applyMargin(driverCost),
+      helperCost: applyMargin(helperCost),
+      selbstkosten: selbstkosten,
+      subtotal: subtotal,
       minApplied: minApplied,
       total: total
     };
@@ -286,14 +340,18 @@ var CONFIG = {
       results.push({ Test: name, Erwartet: true, Erhalten: !!cond, OK: !!cond });
     }
 
-    var dist = { depotToPickup: 10, pickupToDelivery: 620, depotToDelivery: 630 };
+    var legs = {
+      depotToPickup:    { km: 10,  hours: 0.2 },
+      pickupToDelivery: { km: 620, hours: 8.8 },
+      depotToDelivery:  { km: 630, hours: 9.0 }
+    };
     var south = { lat: 48.5, lon: 9.0 };   // südlich vom Depot => Abholfahrt
     var north = { lat: 49.45, lon: 11.08 }; // Nürnberg-artig => Umweg
 
     function berlinInput(over) {
       var base = {
-        items: [{ lengthCm: 60, widthCm: 40, heightCm: 40, weightKg: 10, qty: 1 }],
-        distancesKm: dist,
+        items: [{ lengthCm: 100, widthCm: 100, heightCm: 100, weightKg: 10, qty: 1 }],
+        legs: legs,
         pickup: { lat: south.lat, lon: south.lon, floors: 0, elevator: false },
         delivery: { floors: 0, elevator: false },
         helperNeeded: false, customerHelps: false,
@@ -303,40 +361,49 @@ var CONFIG = {
       return base;
     }
 
-    // Gewichtszuschlag
-    check("Gewicht 45 kg => 0 €",
-      calculateBerlinPrice(berlinInput({ items: [{ lengthCm: 60, widthCm: 40, heightCm: 40, weightKg: 45, qty: 1 }] })).weightSurcharge, 0);
-    check("Gewicht 51 kg => 10 €",
-      calculateBerlinPrice(berlinInput({ items: [{ lengthCm: 60, widthCm: 40, heightCm: 40, weightKg: 51, qty: 1 }] })).weightSurcharge, 10);
-    check("Gewicht 100 kg => 10 €",
-      calculateBerlinPrice(berlinInput({ items: [{ lengthCm: 60, widthCm: 40, heightCm: 40, weightKg: 100, qty: 1 }] })).weightSurcharge, 10);
-    check("Gewicht 101 kg => 20 €",
-      calculateBerlinPrice(berlinInput({ items: [{ lengthCm: 60, widthCm: 40, heightCm: 40, weightKg: 101, qty: 1 }] })).weightSurcharge, 20);
+    // Kostenbausteine (Standardwerte: Verbrauch 10,5 l, 0,065+0,09+0,055 €/km, Maut 0)
+    check("Fahrzeugkosten/km bei Diesel 1,65", vehicleCostPerKm(1.65), 0.38325);
 
-    // Etagenzuschlag: 80 kg => 2 Blöcke; 3. Etage + EG
-    var floor80 = berlinInput({
-      items: [{ lengthCm: 60, widthCm: 40, heightCm: 40, weightKg: 80, qty: 1 }],
-      pickup: { lat: south.lat, lon: south.lon, floors: 3, elevator: false }
-    });
-    check("Etagen 80 kg, 3. OG ohne Aufzug => 30 €", calculateBerlinPrice(floor80).floorSurcharge, 30);
-    var floor80lift = berlinInput({
-      items: [{ lengthCm: 60, widthCm: 40, heightCm: 40, weightKg: 80, qty: 1 }],
-      pickup: { lat: south.lat, lon: south.lon, floors: 3, elevator: true }
-    });
-    check("Etagen mit Aufzug => 1,50 € (5 %)", calculateBerlinPrice(floor80lift).floorSurcharge, 1.5);
+    // Be-/Entlade-/Tragezeit (Grundzeit 2×30 Min.)
+    check("Handling 10 kg EG→EG => 60 Min.",
+      handlingHoursFor(10, { floors: 0, elevator: false }, { floors: 0, elevator: false }) * 60, 60);
+    check("Handling 80 kg, 3. OG ohne Aufzug => 83 Min. (60 + 3×2×3 + 5)",
+      handlingHoursFor(80, { floors: 3, elevator: false }, { floors: 0, elevator: false }) * 60, 83);
+    check("Handling 80 kg, 3. OG mit Aufzug => 65,9 Min. (5 %-Faktor)",
+      handlingHoursFor(80, { floors: 3, elevator: true }, { floors: 0, elevator: false }) * 60, 65.9);
 
-    // Trägerzuschlag
-    var helper40 = berlinInput({
-      items: [{ lengthCm: 60, widthCm: 40, heightCm: 40, weightKg: 40, qty: 1 }],
-      helperNeeded: true, customerHelps: false
-    });
-    check("Träger 40 kg EG→EG => 30 €", calculateBerlinPrice(helper40).helperSurcharge, 30);
-    var helperSelf = berlinInput({ helperNeeded: true, customerHelps: true });
-    check("Kunde hilft selbst => 0 €", calculateBerlinPrice(helperSelf).helperSurcharge, 0);
+    // Modellwahl
+    checkTrue("Ludwigsburg (18 km, nördlich) => Abholfahrt", chooseKmModel({ lat: 48.90, lon: 9.19 }) === "abholfahrt");
+    checkTrue("Tübingen (südlich) => Abholfahrt", chooseKmModel({ lat: 48.52, lon: 9.05 }) === "abholfahrt");
+    checkTrue("Ulm (75 km, südlich) => Abholfahrt", chooseKmModel({ lat: 48.40, lon: 9.99 }) === "abholfahrt");
+    checkTrue("Nürnberg => Umweg", chooseKmModel(north) === "umweg");
+    checkTrue("Karlsruhe => Umweg", chooseKmModel({ lat: 49.01, lon: 8.40 }) === "umweg");
 
-    // Volumen inkl. Marge
-    var vol = calculateBerlinPrice(berlinInput({ items: [{ lengthCm: 100, widthCm: 100, heightCm: 100, weightKg: 10, qty: 1 }] }));
-    check("100×100×100 cm => 1,0927 m³", vol.volumeM3, 1.092727);
+    // km- und Zeit-Formeln
+    var abhol = calculateBerlinPrice(berlinInput({}));
+    check("Abholfahrt-km = 2×10 + 630", abhol.chargeableKm, 650);
+    check("Abholfahrt-Stunden = 2×0,2 + 9", abhol.chargeableHours, 9.4);
+    var umweg = calculateBerlinPrice(berlinInput({ pickup: { lat: north.lat, lon: north.lon, floors: 0, elevator: false } }));
+    check("Umweg-km = 10 + 620 − 630", umweg.chargeableKm, 0);
+
+    // Beiladung Berlin, komplettes Beispiel (1,0927 m³ => 10,93 % Anteil):
+    // Fahrzeug 650×0,38325×Anteil = 27,22 € | Fahrer 9,4×30×Anteil = 30,81 €
+    // Handling 60 Min. × 30 € = 30 € => 88,04 € Selbstkosten => 89 € (aufgerundet)
+    check("Beispiel: Volumen 1,0927 m³", abhol.volumeM3, 1.092727);
+    check("Beispiel: Selbstkosten 88,04 €", abhol.subtotal, 88.03610);
+    check("Beispiel: Gesamtpreis 89 €", abhol.total, 89);
+
+    // Beifahrer: Handling-Zeit × 30 € zusätzlich
+    var helper = calculateBerlinPrice(berlinInput({ helperNeeded: true, customerHelps: false }));
+    check("Beifahrer => +30 € (60 Min. × 30 €), gesamt 119 €", helper.total, 119);
+    var helperSelf = calculateBerlinPrice(berlinInput({ helperNeeded: true, customerHelps: true }));
+    check("Kunde hilft selbst => Beifahrer 0 €", helperSelf.helperCost, 0);
+
+    // Gewinnaufschlag: 25 % auf 88,04 € Selbstkosten => 110,05 => 111 €
+    var savedMargin = CONFIG.gewinnaufschlagProzent;
+    CONFIG.gewinnaufschlagProzent = 25;
+    check("Gewinnaufschlag 25 % => 111 €", calculateBerlinPrice(berlinInput({})).total, 111);
+    CONFIG.gewinnaufschlagProzent = savedMargin;
 
     // Passt-nicht & Übergröße
     var tooBig = calculateBerlinPrice(berlinInput({ items: [{ lengthCm: 110, widthCm: 110, heightCm: 110, weightKg: 5, qty: 10 }] }));
@@ -349,29 +416,23 @@ var CONFIG = {
     check("Schuhkarton => 60 € Mindestpreis", shoe.total, 60);
     checkTrue("Mindestpreis-Flag gesetzt", shoe.minApplied === true);
 
-    // Modellwahl
-    checkTrue("Ludwigsburg (18 km, nördlich) => Abholfahrt", chooseKmModel({ lat: 48.90, lon: 9.19 }) === "abholfahrt");
-    checkTrue("Tübingen (südlich) => Abholfahrt", chooseKmModel({ lat: 48.52, lon: 9.05 }) === "abholfahrt");
-    checkTrue("Ulm (75 km, südlich) => Abholfahrt", chooseKmModel({ lat: 48.40, lon: 9.99 }) === "abholfahrt");
-    checkTrue("Nürnberg => Umweg", chooseKmModel(north) === "umweg");
-    checkTrue("Karlsruhe => Umweg", chooseKmModel({ lat: 49.01, lon: 8.40 }) === "umweg");
-
-    // km-Formeln
-    var abhol = calculateBerlinPrice(berlinInput({}));
-    check("Abholfahrt-km = 2×10 + 630", abhol.chargeableKm, 650);
-    var umweg = calculateBerlinPrice(berlinInput({ pickup: { lat: north.lat, lon: north.lon, floors: 0, elevator: false } }));
-    check("Umweg-km = 10 + 620 − 630", umweg.chargeableKm, 0);
-
-    // Basispreis: 650 km × (1,65+0,10) × Anteil(63×43×43 => 0,0116487 m³)
-    var shareExp = (0.63 * 0.43 * 0.43) / 10;
-    check("Basispreis Beispiel", abhol.basePrice, 650 * 1.75 * shareExp);
-
-    // Sonderfahrt
-    var sf100 = calculateSonderfahrtPrice({ legsKm: { depotToPickup: 20, pickupToDest: 50, destToDepot: 30 } });
-    check("Sonderfahrt 100 km => 80 €", sf100.total, 80);
-    var sf50 = calculateSonderfahrtPrice({ legsKm: { depotToPickup: 10, pickupToDest: 25, destToDepot: 15 } });
-    check("Sonderfahrt 50 km => 60 € (Mindestpreis)", sf50.total, 60);
-    checkTrue("Sonderfahrt-Mindestpreis-Flag", sf50.minApplied === true);
+    // Sonderfahrt: 90 km, 1,5 h Fahrt + 60 Min. Ladezeit = 2,5 h
+    // Fahrzeug 90×0,38325 = 34,49 € | Fahrer 2,5×30 = 75,00 € => 109,49 => 110 €
+    var sfLegs = {
+      depotToPickup: { km: 30, hours: 0.5 },
+      pickupToDest:  { km: 30, hours: 0.5 },
+      destToDepot:   { km: 30, hours: 0.5 }
+    };
+    var sf = calculateSonderfahrtPrice({ legs: sfLegs, helperNeeded: false, dieselPricePerL: 1.65 });
+    check("Sonderfahrt 90 km => 110 €", sf.total, 110);
+    var sfHelper = calculateSonderfahrtPrice({ legs: sfLegs, helperNeeded: true, dieselPricePerL: 1.65 });
+    check("Sonderfahrt mit Beifahrer => +75 € => 185 €", sfHelper.total, 185);
+    var sfMin = calculateSonderfahrtPrice({
+      legs: { depotToPickup: { km: 10, hours: 0.15 }, pickupToDest: { km: 10, hours: 0.15 }, destToDepot: { km: 10, hours: 0.15 } },
+      helperNeeded: false, dieselPricePerL: 1.65
+    });
+    check("Sonderfahrt Kurzstrecke => 60 € Mindestpreis", sfMin.total, 60);
+    checkTrue("Sonderfahrt-Mindestpreis-Flag", sfMin.minApplied === true);
 
     // Putzservice
     check("Anfahrt 5,0 km => 5 €", travelFeeForKm(5.0), 5);
@@ -454,10 +515,12 @@ var CONFIG = {
     });
   }
 
-  // Straßen-km zwischen zwei Punkten: ORS, sonst Luftlinie × roadFactor.
+  // Straßen-km + Fahrzeit zwischen zwei Punkten: ORS, sonst Luftlinie × roadFactor
+  // und Fahrzeit über das Durchschnittstempo geschätzt.
   var routeCache = {};
   function routeKm(from, to) {
-    var fallback = { km: haversineKm(from, to) * CONFIG.roadFactor, estimated: true };
+    var fbKm = haversineKm(from, to) * CONFIG.roadFactor;
+    var fallback = { km: fbKm, hours: fbKm / CONFIG.durchschnittstempoKmh, estimated: true };
     if (!CONFIG.orsApiKey) return Promise.resolve(fallback);
 
     var key = [from.lat.toFixed(4), from.lon.toFixed(4), to.lat.toFixed(4), to.lon.toFixed(4)].join("|");
@@ -472,9 +535,14 @@ var CONFIG = {
       return r.json();
     }).then(function (data) {
       var f = data.features && data.features[0];
-      var meters = f && f.properties && f.properties.summary && f.properties.summary.distance;
+      var summary = f && f.properties && f.properties.summary;
+      var meters = summary && summary.distance;
       if (typeof meters !== "number") throw new Error("ors: keine Distanz");
-      var result = { km: meters / 1000, estimated: false };
+      var km = meters / 1000;
+      var hours = (summary && typeof summary.duration === "number")
+        ? summary.duration / 3600
+        : km / CONFIG.durchschnittstempoKmh;
+      var result = { km: km, hours: hours, estimated: false };
       routeCache[key] = result;
       return result;
     }).catch(function () {
@@ -843,10 +911,9 @@ var CONFIG = {
     if (result && result.ok) {
       lines.push("Strecke: " + fmtKm(result.chargeableKm) + " (" +
                  (result.model === "abholfahrt" ? "Abholfahrt" : "Umweg") + ")");
-      lines.push("Transport: " + fmtEur(result.basePrice) +
-                 " | Gewicht: " + fmtEur(result.weightSurcharge) +
-                 " | Etagen: " + fmtEur(result.floorSurcharge) +
-                 " | Träger: " + fmtEur(result.helperSurcharge));
+      lines.push("Fahrt: " + fmtEur(result.fahrtCost) +
+                 " | Verladen/Tragen: " + fmtEur(result.handlingCost) +
+                 " | Beifahrer: " + fmtEur(result.helperCost));
       lines.push("GESAMT: " + fmtEur0(result.total));
       lines.push("(Diesel " + fmtNum(result.dieselPricePerL, 2) + " €/l, Stand " +
                  new Date().toLocaleDateString("de-DE") + ", gültig " + CONFIG.priceValidityDays +
@@ -965,7 +1032,7 @@ var CONFIG = {
           var fuel = r[3];
           var result = calculateBerlinPrice({
             items: data.items,
-            distancesKm: { depotToPickup: r[0].km, pickupToDelivery: r[1].km, depotToDelivery: r[2].km },
+            legs: { depotToPickup: r[0], pickupToDelivery: r[1], depotToDelivery: r[2] },
             pickup: data.pickup,
             delivery: data.delivery,
             helperNeeded: data.helperNeeded,
@@ -988,16 +1055,16 @@ var CONFIG = {
           }
 
           var lines = [
-            { label: "Transport (" + fmtKm(result.chargeableKm) + " × " +
-                     fmtNum(fuel.price + CONFIG.dieselSurchargePerLitre, 2) + " €/km × " +
+            { label: "Fahrt (" + fmtKm(result.chargeableKm) + ", anteilig " +
                      fmtNum(result.volumeShare * 100, 1) + " % Ladevolumen)",
-              amount: fmtEur(result.basePrice) },
-            { label: "Gewichtszuschlag (" + fmtNum(result.weightKg, 0) + " kg)", amount: fmtEur(result.weightSurcharge) },
-            { label: "Etagenzuschlag", amount: fmtEur(result.floorSurcharge) },
-            { label: "Zweiter Träger", amount: fmtEur(result.helperSurcharge) }
+              amount: fmtEur(result.fahrtCost) },
+            { label: "Be- & Entladen, Tragen (ca. " + Math.round(result.handlingMinutes) + " Min., " +
+                     fmtNum(result.weightKg, 0) + " kg)",
+              amount: fmtEur(result.handlingCost) },
+            { label: "Beifahrer / zweiter Träger", amount: fmtEur(result.helperCost) }
           ];
           if (result.minApplied) {
-            lines.push({ label: "Mindestauftragswert", amount: fmtEur(CONFIG.minPriceEur - result.subtotal >= 0 ? CONFIG.minPriceEur - result.subtotal : 0) });
+            lines.push({ label: "Mindestauftragswert", amount: fmtEur(Math.max(0, CONFIG.minPriceEur - result.subtotal)) });
           }
 
           var badges = [
@@ -1043,9 +1110,13 @@ var CONFIG = {
                (data.destFloor !== null ? " (Etage " + data.destFloor + ")" : ""));
     lines.push("Termin: " + fmtDateDe(data.date) + ", " + data.time + " Uhr");
     lines.push("Ladung: " + data.desc);
+    lines.push("Beifahrer benötigt: " + (data.helperNeeded ? "Ja" : "Nein"));
     lines.push("──────────────");
-    lines.push("Strecke gesamt: " + fmtKm(result.totalKm) + " (inkl. Rückfahrt)");
-    lines.push("km-Preis: " + fmtNum(CONFIG.sonderfahrtPerKmEur, 2) + " €/km");
+    lines.push("Strecke gesamt: " + fmtKm(result.totalKm) + " (inkl. Rückfahrt), ca. " +
+               fmtNum(result.totalHours, 1) + " Std.");
+    lines.push("Fahrzeug: " + fmtEur(result.vehicleCost) +
+               " | Fahrer: " + fmtEur(result.driverCost) +
+               (result.helperCost > 0 ? " | Beifahrer: " + fmtEur(result.helperCost) : ""));
     lines.push("GESAMT: " + fmtEur0(result.total) +
                (result.minApplied ? " (Mindestpreis)" : ""));
     if (flags.estimated) lines.push("(Entfernung geschätzt)");
@@ -1106,6 +1177,7 @@ var CONFIG = {
           date: dateInput.value,
           time: timeInput.value,
           desc: descInput.value.trim(),
+          helperNeeded: document.getElementById("s-helper").checked,
           pickupFloor: intValue(document.getElementById("s-pickup-floor")),
           destFloor: intValue(document.getElementById("s-dest-floor")),
           name: document.getElementById("s-name").value.trim()
@@ -1114,26 +1186,38 @@ var CONFIG = {
         return Promise.all([
           routeKm(CONFIG.depot, pickup),
           routeKm(pickup, dest),
-          routeKm(dest, CONFIG.depot)
+          routeKm(dest, CONFIG.depot),
+          getDieselPrice()
         ]).then(function (r) {
           var estimated = r[0].estimated || r[1].estimated || r[2].estimated;
+          var fuel = r[3];
           var result = calculateSonderfahrtPrice({
-            legsKm: { depotToPickup: r[0].km, pickupToDest: r[1].km, destToDepot: r[2].km }
+            legs: { depotToPickup: r[0], pickupToDest: r[1], destToDepot: r[2] },
+            helperNeeded: data.helperNeeded,
+            dieselPricePerL: fuel.price
           });
 
           var lines = [
-            { label: "Anfahrt zur Abholung (" + fmtKm(r[0].km) + ")", amount: fmtEur(r[0].km * CONFIG.sonderfahrtPerKmEur) },
-            { label: "Transportstrecke (" + fmtKm(r[1].km) + ")", amount: fmtEur(r[1].km * CONFIG.sonderfahrtPerKmEur) },
-            { label: "Rückfahrt (" + fmtKm(r[2].km) + ")", amount: fmtEur(r[2].km * CONFIG.sonderfahrtPerKmEur) }
+            { label: "Fahrzeug (" + fmtKm(result.totalKm) + " inkl. Rückfahrt zum Standort)",
+              amount: fmtEur(result.vehicleCost) },
+            { label: "Fahrer (ca. " + fmtNum(result.totalHours, 1) + " Std. inkl. Be-/Entladen)",
+              amount: fmtEur(result.driverCost) }
           ];
+          if (result.helperCost > 0) {
+            lines.push({ label: "Beifahrer (ca. " + fmtNum(result.totalHours, 1) + " Std.)",
+                         amount: fmtEur(result.helperCost) });
+          }
           if (result.minApplied) {
-            lines.push({ label: "Mindestpreis Sonderfahrt", amount: fmtEur(CONFIG.sonderfahrtMinPriceEur - result.kmPrice) });
+            lines.push({ label: "Mindestpreis Sonderfahrt", amount: fmtEur(Math.max(0, CONFIG.sonderfahrtMinPriceEur - result.subtotal)) });
           }
 
           var badges = [
             { text: "Exklusiver Transporter" },
-            { text: fmtNum(CONFIG.sonderfahrtPerKmEur, 2) + " €/km, alle Strecken inkl. Rückfahrt" }
+            { text: "Preis nach Strecke und Zeit" }
           ];
+          badges.push(fuel.isFallback
+            ? { text: "Diesel: Standardwert " + fmtNum(fuel.price, 2) + " €/l", warn: true }
+            : { text: "Diesel: " + fmtNum(fuel.price, 2) + " €/l (aktuell)" });
           if (estimated) badges.push({ text: "Entfernung geschätzt (Luftlinie)", warn: true });
 
           var wa = sonderfahrtWaMessage(data, result, { estimated: estimated });
@@ -1310,7 +1394,6 @@ var CONFIG = {
     var tiers = CONFIG.cleaningTravelTiers;
     var fees = tiers.map(function (t) { return t.feeEur; });
     var values = {
-      sonderfahrtPerKm: fmtNum(CONFIG.sonderfahrtPerKmEur, 2),
       cleaningRate: String(CONFIG.cleaningHourlyRateEur),
       cleaningMinHours: String(CONFIG.cleaningMinHours),
       cleaningTravelRange: Math.min.apply(null, fees) + "–" + Math.max.apply(null, fees),
