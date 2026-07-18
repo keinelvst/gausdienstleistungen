@@ -78,11 +78,13 @@ var CONFIG = {
   // ── APIs & Fallbacks ───────────────────────────────────────────────
   // OpenRouteService: kostenloser Key auf openrouteservice.org.
   // Leer lassen => Entfernungen werden über Luftlinie × roadFactor geschätzt.
+  // Hinweis: Auf der Live-Seite wird der Key beim Veröffentlichen automatisch
+  // aus dem GitHub-Secret "ORS_API_KEY" eingesetzt (.github/workflows/deploy.yml).
   orsApiKey: "",
   // Tankerkönig: kostenloser Key auf tankerkoenig.de.
   // Leer lassen => fallbackDieselPrice wird verwendet.
   tankerkoenigApiKey: "",
-  fallbackDieselPrice: 1.90,     // €/l wenn kein Key oder API nicht erreichbar (2026-Mittel, brutto)
+  fallbackDieselPrice: 2.20,     // €/l wenn kein Key oder API nicht erreichbar (Vorgabe Inhaber)
   fuelCacheMinutes: 60,          // Dieselpreis so lange zwischenspeichern
   fuelSearchRadiusKm: 5,         // Tankstellensuche im Umkreis um das Depot
   roadFactor: 1.3                // Luftlinie × Faktor ≈ Straßen-km (Fallback)
