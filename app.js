@@ -38,7 +38,8 @@ var CONFIG = {
   jahresKilometer: 40000,        // geplante Jahres-km (Umlagebasis für die Werbekosten)
 
   durchschnittstempoKmh: 80,     // Fahrzeit-Schätzung ohne Routen-API (Langstrecke inkl. Pausen ~85, Stadt real ~25)
-  ladezeitProStoppMin: 30,       // Grundzeit Be-/Entladen je Stopp (Kurier-Branchenstandard)
+  ladezeitProStoppMin: 22.5,     // Grundzeit Be-/Entladen je Stopp
+                                 // => 45 Minuten je Auftrag (Abholung + Lieferung zusammen)
 
   // ── Zuschläge Etagen & Schwergut (feste Euro-Beträge) ──────────────
   // Etagenzuschlag je Etage und Adresse = Grundbetrag + Betrag je m³ (exakt, ohne Aufrundung).
@@ -418,7 +419,7 @@ var CONFIG = {
 
     // Kostenbausteine: Verbrauch 14 l, 0,065+0,09+0,055 €/km, Maut 0, Werbung 4000/40000 = 0,10 €/km
     check("Fahrzeugkosten/km bei Diesel 1,65", vehicleCostPerKm(1.65), 0.541);
-    check("Be-/Entladezeit => 60 Min.", handlingHours() * 60, 60);
+    check("Be-/Entladezeit => 45 Min.", handlingHours() * 60, 45);
 
     // Etagenzuschlag: je Etage 10 € + 5 € je m³ (exakt, keine Aufrundung)
     var eg = { floors: 0, elevator: false };
@@ -470,14 +471,14 @@ var CONFIG = {
 
     // Beiladung Berlin, komplettes Beispiel (1,0927 m³ => 14,57 % Anteil):
     // Fahrzeug 650×0,541×Anteil = 51,23 € | Fahrer 9,4×30×Anteil = 41,09 €
-    // Verladen 60 Min. × 30 € = 30 € => 122,32 € Selbstkosten => 123 € (aufgerundet)
+    // Verladen 45 Min. × 30 € = 22,50 € => 114,82 € Selbstkosten => 115 € (aufgerundet)
     check("Beispiel: Volumen 1,0927 m³", abhol.volumeM3, 1.092727);
-    check("Beispiel: Selbstkosten 122,32 €", abhol.subtotal, 122.32085);
-    check("Beispiel: Gesamtpreis 123 €", abhol.total, 123);
+    check("Beispiel: Selbstkosten 114,82 €", abhol.subtotal, 114.82085);
+    check("Beispiel: Gesamtpreis 115 €", abhol.total, 115);
 
-    // Beifahrer: Ladezeit voll (30 €) + Fahrzeit anteilig (9,4×30×14,57 % = 41,09 €)
+    // Beifahrer: Ladezeit voll (22,50 €) + Fahrzeit anteilig (9,4×30×14,57 % = 41,09 €)
     var helper = calculateBerlinPrice(berlinInput({ helperNeeded: true, customerHelps: false }));
-    check("Beifahrer => +71,09 €, gesamt 194 €", helper.total, 194);
+    check("Beifahrer => +63,59 €, gesamt 179 €", helper.total, 179);
     var helperSelf = calculateBerlinPrice(berlinInput({ helperNeeded: true, customerHelps: true }));
     check("Kunde hilft selbst => Beifahrer 0 €", helperSelf.helperCost, 0);
 
@@ -485,20 +486,20 @@ var CONFIG = {
     var mitEtagen = calculateBerlinPrice(berlinInput({
       pickup: { lat: south.lat, lon: south.lon, floors: 3, elevator: false }
     }));
-    check("3. OG => +46,39 € Etagenzuschlag, gesamt 169 €", mitEtagen.total, 169);
+    check("3. OG => +46,39 € Etagenzuschlag, gesamt 162 €", mitEtagen.total, 162);
     var mitSchwergut = calculateBerlinPrice(berlinInput({
       items: [{ lengthCm: 100, widthCm: 100, heightCm: 100, weightKg: 70, qty: 1 }]
     }));
-    check("70-kg-Stück => +30 € Schwergut, gesamt 153 €", mitSchwergut.total, 153);
+    check("70-kg-Stück => +30 € Schwergut, gesamt 145 €", mitSchwergut.total, 145);
     var zuSchwer = calculateBerlinPrice(berlinInput({
       items: [{ lengthCm: 60, widthCm: 60, heightCm: 60, weightKg: 100, qty: 1 }]
     }));
     checkTrue("100-kg-Stück => reason 'heavy'", zuSchwer.ok === false && zuSchwer.reason === "heavy");
 
-    // Gewinnaufschlag: 25 % auf 122,32 € Selbstkosten => 152,90 => 153 €
+    // Gewinnaufschlag: 25 % auf 114,82 € Selbstkosten => 143,53 => 144 €
     var savedMargin = CONFIG.gewinnaufschlagProzent;
     CONFIG.gewinnaufschlagProzent = 25;
-    check("Gewinnaufschlag 25 % => 153 €", calculateBerlinPrice(berlinInput({})).total, 153);
+    check("Gewinnaufschlag 25 % => 144 €", calculateBerlinPrice(berlinInput({})).total, 144);
     CONFIG.gewinnaufschlagProzent = savedMargin;
 
     // Passt-nicht & Übergröße
@@ -512,17 +513,17 @@ var CONFIG = {
     check("Schuhkarton => 60 € Mindestpreis", shoe.total, 60);
     checkTrue("Mindestpreis-Flag gesetzt", shoe.minApplied === true);
 
-    // Sonderfahrt: 90 km, 1,5 h Fahrt + 60 Min. Ladezeit = 2,5 h
-    // Fahrzeug 90×0,541 = 48,69 € | Fahrer 2,5×30 = 75,00 € => 123,69 => 124 €
+    // Sonderfahrt: 90 km, 1,5 h Fahrt + 45 Min. Ladezeit = 2,25 h
+    // Fahrzeug 90×0,541 = 48,69 € | Fahrer 2,25×30 = 67,50 € => 116,19 => 117 €
     var sfLegs = {
       depotToPickup: { km: 30, hours: 0.5 },
       pickupToDest:  { km: 30, hours: 0.5 },
       destToDepot:   { km: 30, hours: 0.5 }
     };
     var sf = calculateSonderfahrtPrice({ legs: sfLegs, helperNeeded: false, dieselPricePerL: 1.65 });
-    check("Sonderfahrt 90 km => 124 €", sf.total, 124);
+    check("Sonderfahrt 90 km => 117 €", sf.total, 117);
     var sfHelper = calculateSonderfahrtPrice({ legs: sfLegs, helperNeeded: true, dieselPricePerL: 1.65 });
-    check("Sonderfahrt mit Beifahrer => +75 € => 199 €", sfHelper.total, 199);
+    check("Sonderfahrt mit Beifahrer => +67,50 € => 184 €", sfHelper.total, 184);
     var sfMin = calculateSonderfahrtPrice({
       legs: { depotToPickup: { km: 10, hours: 0.15 }, pickupToDest: { km: 10, hours: 0.15 }, destToDepot: { km: 10, hours: 0.15 } },
       helperNeeded: false, dieselPricePerL: 1.65
