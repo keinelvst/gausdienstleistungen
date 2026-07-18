@@ -29,11 +29,13 @@ var CONFIG = {
   beifahrerStundensatzEur: 30,   // Lohn Beifahrer/zweiter Träger, je Stunde
 
   // Kostensätze laut Recherche 07/2026 (bfp-Fuhrparkdaten, ADAC, Marktdaten):
-  verbrauchLper100km: 10.5,      // Diesel real, beladen, Langstrecke (Spanne 9–12 l)
+  verbrauchLper100km: 14,        // Diesel real (Angabe Inhaber)
   verschleissEurProKm: 0.065,    // Wartung + Verschleiß + Reifen (5–8 ct, bei altem Fahrzeug eher 0.08)
   abschreibungEurProKm: 0.09,    // Wertverlust Gebraucht-Transporter (6–12 ct je nach Kaufpreis)
   fixkostenEurProKm: 0.055,      // Versicherung ~1.500 €, Steuer 210 €, HU — bei 40.000 km/Jahr
   mautEurProKm: 0,               // Rechtsstand 2026: mautfrei BIS 3,5 t zGG (darüber: ~0.151 eintragen)
+  werbekostenProJahrEur: 4000,   // Werbung/Marketing pro Jahr — wird je gefahrenem km umgelegt
+  jahresKilometer: 40000,        // geplante Jahres-km (Umlagebasis für die Werbekosten)
 
   durchschnittstempoKmh: 80,     // Fahrzeit-Schätzung ohne Routen-API (Langstrecke inkl. Pausen ~85, Stadt real ~25)
   ladezeitProStoppMin: 30,       // Grundzeit Be-/Entladen je Stopp (Kurier-Branchenstandard)
@@ -184,7 +186,8 @@ var CONFIG = {
   function vehicleCostPerKm(dieselPricePerL) {
     return dieselPricePerL * CONFIG.verbrauchLper100km / 100 +
            CONFIG.verschleissEurProKm + CONFIG.abschreibungEurProKm +
-           CONFIG.fixkostenEurProKm + CONFIG.mautEurProKm;
+           CONFIG.fixkostenEurProKm + CONFIG.mautEurProKm +
+           CONFIG.werbekostenProJahrEur / CONFIG.jahresKilometer;
   }
 
   // Gewinnaufschlag auf die Selbstkosten.
@@ -361,8 +364,8 @@ var CONFIG = {
       return base;
     }
 
-    // Kostenbausteine (Standardwerte: Verbrauch 10,5 l, 0,065+0,09+0,055 €/km, Maut 0)
-    check("Fahrzeugkosten/km bei Diesel 1,65", vehicleCostPerKm(1.65), 0.38325);
+    // Kostenbausteine: Verbrauch 14 l, 0,065+0,09+0,055 €/km, Maut 0, Werbung 4000/40000 = 0,10 €/km
+    check("Fahrzeugkosten/km bei Diesel 1,65", vehicleCostPerKm(1.65), 0.541);
 
     // Be-/Entlade-/Tragezeit (Grundzeit 2×30 Min.)
     check("Handling 10 kg EG→EG => 60 Min.",
@@ -387,22 +390,22 @@ var CONFIG = {
     check("Umweg-km = 10 + 620 − 630", umweg.chargeableKm, 0);
 
     // Beiladung Berlin, komplettes Beispiel (1,0927 m³ => 10,93 % Anteil):
-    // Fahrzeug 650×0,38325×Anteil = 27,22 € | Fahrer 9,4×30×Anteil = 30,81 €
-    // Handling 60 Min. × 30 € = 30 € => 88,04 € Selbstkosten => 89 € (aufgerundet)
+    // Fahrzeug 650×0,541×Anteil = 38,43 € | Fahrer 9,4×30×Anteil = 30,81 €
+    // Handling 60 Min. × 30 € = 30 € => 99,24 € Selbstkosten => 100 € (aufgerundet)
     check("Beispiel: Volumen 1,0927 m³", abhol.volumeM3, 1.092727);
-    check("Beispiel: Selbstkosten 88,04 €", abhol.subtotal, 88.03610);
-    check("Beispiel: Gesamtpreis 89 €", abhol.total, 89);
+    check("Beispiel: Selbstkosten 99,24 €", abhol.subtotal, 99.24065);
+    check("Beispiel: Gesamtpreis 100 €", abhol.total, 100);
 
     // Beifahrer: Handling-Zeit × 30 € zusätzlich
     var helper = calculateBerlinPrice(berlinInput({ helperNeeded: true, customerHelps: false }));
-    check("Beifahrer => +30 € (60 Min. × 30 €), gesamt 119 €", helper.total, 119);
+    check("Beifahrer => +30 € (60 Min. × 30 €), gesamt 130 €", helper.total, 130);
     var helperSelf = calculateBerlinPrice(berlinInput({ helperNeeded: true, customerHelps: true }));
     check("Kunde hilft selbst => Beifahrer 0 €", helperSelf.helperCost, 0);
 
-    // Gewinnaufschlag: 25 % auf 88,04 € Selbstkosten => 110,05 => 111 €
+    // Gewinnaufschlag: 25 % auf 99,24 € Selbstkosten => 124,05 => 125 €
     var savedMargin = CONFIG.gewinnaufschlagProzent;
     CONFIG.gewinnaufschlagProzent = 25;
-    check("Gewinnaufschlag 25 % => 111 €", calculateBerlinPrice(berlinInput({})).total, 111);
+    check("Gewinnaufschlag 25 % => 125 €", calculateBerlinPrice(berlinInput({})).total, 125);
     CONFIG.gewinnaufschlagProzent = savedMargin;
 
     // Passt-nicht & Übergröße
@@ -417,16 +420,16 @@ var CONFIG = {
     checkTrue("Mindestpreis-Flag gesetzt", shoe.minApplied === true);
 
     // Sonderfahrt: 90 km, 1,5 h Fahrt + 60 Min. Ladezeit = 2,5 h
-    // Fahrzeug 90×0,38325 = 34,49 € | Fahrer 2,5×30 = 75,00 € => 109,49 => 110 €
+    // Fahrzeug 90×0,541 = 48,69 € | Fahrer 2,5×30 = 75,00 € => 123,69 => 124 €
     var sfLegs = {
       depotToPickup: { km: 30, hours: 0.5 },
       pickupToDest:  { km: 30, hours: 0.5 },
       destToDepot:   { km: 30, hours: 0.5 }
     };
     var sf = calculateSonderfahrtPrice({ legs: sfLegs, helperNeeded: false, dieselPricePerL: 1.65 });
-    check("Sonderfahrt 90 km => 110 €", sf.total, 110);
+    check("Sonderfahrt 90 km => 124 €", sf.total, 124);
     var sfHelper = calculateSonderfahrtPrice({ legs: sfLegs, helperNeeded: true, dieselPricePerL: 1.65 });
-    check("Sonderfahrt mit Beifahrer => +75 € => 185 €", sfHelper.total, 185);
+    check("Sonderfahrt mit Beifahrer => +75 € => 199 €", sfHelper.total, 199);
     var sfMin = calculateSonderfahrtPrice({
       legs: { depotToPickup: { km: 10, hours: 0.15 }, pickupToDest: { km: 10, hours: 0.15 }, destToDepot: { km: 10, hours: 0.15 } },
       helperNeeded: false, dieselPricePerL: 1.65
