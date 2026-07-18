@@ -51,10 +51,12 @@ var CONFIG = {
   // Zuschlag je EINZELSTÜCK nach dessen Gewicht.
   // Reihenfolge: schwerste Stufe zuerst; die erste passende Stufe zählt.
   // Unter der leichtesten Stufe (hier 40 kg) gibt es keinen Aufpreis.
+  //   eur         = einmaliger Zuschlag für das Stück
+  //   proEtageEur = zusätzlich je Etage und Adresse (schwer tragen kostet mehr Kraft)
   schwergutStaffel: [
-    { abKg: 80, eur: 80 },       // 80 bis unter 100 kg
-    { abKg: 60, eur: 60 },       // 60 bis unter 80 kg
-    { abKg: 40, eur: 30 }        // 40 bis unter 60 kg
+    { abKg: 80, eur: 80, proEtageEur: 25 },   // 80 bis unter 100 kg
+    { abKg: 60, eur: 60, proEtageEur: 15 },   // 60 bis unter 80 kg
+    { abKg: 40, eur: 30, proEtageEur: 8 }     // 40 bis unter 60 kg
   ],
   maxEinzelstueckKg: 100,        // ab hier kein Online-Preis mehr => "bitte anfragen"
 
@@ -222,10 +224,27 @@ var CONFIG = {
     return 2 * CONFIG.ladezeitProStoppMin / 60;
   }
 
+  // Aufschlag je Etage für schwere Einzelstücke (gleiche Staffel wie der Schwergut-Zuschlag).
+  function heavyItemFloorEur(items) {
+    var sum = 0;
+    var staffel = CONFIG.schwergutStaffel;
+    for (var i = 0; i < items.length; i++) {
+      for (var s = 0; s < staffel.length; s++) {
+        if (items[i].weightKg >= staffel[s].abKg) {
+          sum += (staffel[s].proEtageEur || 0) * items[i].qty;
+          break;
+        }
+      }
+    }
+    return sum;
+  }
+
   // Etagenzuschlag in € über beide Adressen.
-  // Je Etage: Grundbetrag + Betrag je m³ (exakt); mit Aufzug nur der Aufzug-Faktor.
-  function floorSurchargeEur(volumeM3, pickup, delivery) {
-    var proEtage = CONFIG.etagenGrundEur + CONFIG.etagenProM3Eur * volumeM3;
+  // Je Etage: Grundbetrag + Betrag je m³ + Aufschlag für schwere Stücke;
+  // mit Aufzug nur der Aufzug-Faktor.
+  function floorSurchargeEur(volumeM3, items, pickup, delivery) {
+    var proEtage = CONFIG.etagenGrundEur + CONFIG.etagenProM3Eur * volumeM3 +
+                   heavyItemFloorEur(items);
     function fuerAdresse(a) {
       return a.floors * proEtage * (a.elevator ? CONFIG.aufzugFaktor : 1);
     }
@@ -290,7 +309,7 @@ var CONFIG = {
         hours * CONFIG.beifahrerStundensatzEur * share
       : 0;
 
-    var floorEur = floorSurchargeEur(totals.volumeM3, input.pickup, input.delivery);
+    var floorEur = floorSurchargeEur(totals.volumeM3, input.items, input.pickup, input.delivery);
     var heavyEur = heavyItemSurchargeEur(input.items);
 
     var selbstkosten = vehicleCost + driverDriveCost + handlingSelfCost + helperSelfCost +
@@ -431,17 +450,28 @@ var CONFIG = {
 
     // Etagenzuschlag: je Etage 10 € + 5 € je m³ (exakt, keine Aufrundung)
     var eg = { floors: 0, elevator: false };
-    check("Etagen: Waschmaschine (0,35 m³), 3. OG => 35,25 € (3 × 11,75 €)",
-      floorSurchargeEur(0.35, { floors: 3, elevator: false }, eg), 35.25);
-    check("Etagen: Sofa (2 m³), 2. OG => 40 € (2 × 20 €)",
-      floorSurchargeEur(2, { floors: 2, elevator: false }, eg), 40);
-    check("Etagen: volle Ladung (10 m³), 1. OG => 60 €",
-      floorSurchargeEur(10, { floors: 1, elevator: false }, eg), 60);
+    var leicht = [{ weightKg: 20, qty: 1 }];
+    check("Etagen: 0,35 m³ leicht, 3. OG => 35,25 € (3 × 11,75 €)",
+      floorSurchargeEur(0.35, leicht, { floors: 3, elevator: false }, eg), 35.25);
+    check("Etagen: 2 m³ leicht, 2. OG => 40 € (2 × 20 €)",
+      floorSurchargeEur(2, leicht, { floors: 2, elevator: false }, eg), 40);
+    check("Etagen: volle Ladung (10 m³) leicht, 1. OG => 60 €",
+      floorSurchargeEur(10, leicht, { floors: 1, elevator: false }, eg), 60);
     check("Etagen: mit Aufzug nur 30 % => 10,575 €",
-      floorSurchargeEur(0.35, { floors: 3, elevator: true }, eg), 10.575);
+      floorSurchargeEur(0.35, leicht, { floors: 3, elevator: true }, eg), 10.575);
     check("Etagen: beide Adressen zählen => 80 €",
-      floorSurchargeEur(2, { floors: 2, elevator: false }, { floors: 2, elevator: false }), 80);
-    check("Etagen: Erdgeschoss => 0 €", floorSurchargeEur(2, eg, eg), 0);
+      floorSurchargeEur(2, leicht, { floors: 2, elevator: false }, { floors: 2, elevator: false }), 80);
+    check("Etagen: Erdgeschoss => 0 €", floorSurchargeEur(2, leicht, eg, eg), 0);
+
+    // Schweres Stück erhöht den Etagenpreis: ab 40 kg +8 €, ab 60 kg +15 €, ab 80 kg +25 €
+    check("Etagen: 70-kg-Stück, 3. OG => 80,25 € (3 × 26,75 €)",
+      floorSurchargeEur(0.35, [{ weightKg: 70, qty: 1 }], { floors: 3, elevator: false }, eg), 80.25);
+    check("Etagen: 85-kg-Stück, 1. OG => 36,75 €",
+      floorSurchargeEur(0.35, [{ weightKg: 85, qty: 1 }], { floors: 1, elevator: false }, eg), 36.75);
+    check("Etagen: 2 Stück à 45 kg, 1. OG => 27,75 €",
+      floorSurchargeEur(0.35, [{ weightKg: 45, qty: 2 }], { floors: 1, elevator: false }, eg), 27.75);
+    check("Etagen: 39-kg-Stück zählt nicht als schwer => 11,75 €",
+      floorSurchargeEur(0.35, [{ weightKg: 39, qty: 1 }], { floors: 1, elevator: false }, eg), 11.75);
 
     // Schwergut-Staffel je Einzelstück: ab 40 kg 30 €, ab 60 kg 60 €, ab 80 kg 80 €
     check("Schwergut 30 kg => 0 €", heavyItemSurchargeEur([{ weightKg: 30, qty: 1 }]), 0);
