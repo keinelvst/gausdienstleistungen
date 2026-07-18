@@ -1,0 +1,298 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Gaus Dienstleistungen – Transport Stuttgart–Berlin, Sonderfahrten &amp; Putzservice</title>
+  <meta name="description" content="Beiladung Stuttgart–Berlin mit Sofort-Preis, kurzfristige Sonderfahrten ab Stuttgart und Putzservice in Stuttgart. Jetzt Preis berechnen und per WhatsApp anfragen.">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+  <header class="site-header">
+    <div class="wrap">
+      <div class="brand">
+        <span class="brand-logo" aria-hidden="true">G</span>
+        <div>
+          <p class="brand-name">Gaus Dienstleistungen</p>
+          <p class="brand-tag">Transport &amp; Reinigung aus Stuttgart</p>
+        </div>
+      </div>
+      <p class="hero-line">Sofort-Preis berechnen – ohne Anruf, ohne Wartezeit.</p>
+    </div>
+  </header>
+
+  <nav class="tabs" aria-label="Leistungsbereiche">
+    <div class="wrap tabs-row">
+      <button class="tab is-active" data-tab="transport" type="button">Transport nach Berlin</button>
+      <button class="tab" data-tab="sonderfahrt" type="button">Sonderfahrt</button>
+      <button class="tab" data-tab="putzservice" type="button">Putzservice</button>
+    </div>
+  </nav>
+
+  <main class="wrap">
+
+    <!-- ══════════════ BEREICH 1: TRANSPORT NACH BERLIN ══════════════ -->
+    <section id="transport" class="panel is-active" aria-label="Transport nach Berlin">
+      <div class="card intro-card">
+        <h1>Beiladung Stuttgart&nbsp;→&nbsp;Berlin</h1>
+        <p>Wir fahren regelmäßig von Stuttgart nach Berlin. Ihre Sendung fährt mit –
+           Sie zahlen nur den Anteil, den Ihre Ladung im Transporter belegt.
+           Geben Sie Ihre Daten ein und erhalten Sie sofort Ihren Preis.</p>
+      </div>
+
+      <form id="form-transport" class="card" novalidate>
+        <h2>Abholung</h2>
+        <div class="field">
+          <label for="t-pickup-address">Abholadresse <span class="req">*</span></label>
+          <div class="ac-wrap">
+            <input type="text" id="t-pickup-address" autocomplete="off" spellcheck="false"
+                   placeholder="Straße Hausnummer, PLZ Ort" required>
+          </div>
+          <p class="field-error" hidden></p>
+        </div>
+        <div class="field-row">
+          <div class="field">
+            <label for="t-pickup-floor">Etage <span class="req">*</span></label>
+            <input type="number" id="t-pickup-floor" inputmode="numeric" min="0" max="10" step="1" value="0" required>
+            <p class="field-hint">0 = Erdgeschoss</p>
+            <p class="field-error" hidden></p>
+          </div>
+          <div class="field field-check">
+            <label class="check">
+              <input type="checkbox" id="t-pickup-elevator">
+              <span>Aufzug vorhanden <em>und</em> die Gegenstände passen hinein</span>
+            </label>
+          </div>
+        </div>
+
+        <h2>Lieferung <span class="h2-note">(Berlin und Umgebung)</span></h2>
+        <div class="field">
+          <label for="t-delivery-address">Lieferadresse <span class="req">*</span></label>
+          <div class="ac-wrap">
+            <input type="text" id="t-delivery-address" autocomplete="off" spellcheck="false"
+                   placeholder="Straße Hausnummer, PLZ Berlin" required>
+          </div>
+          <p class="field-error" hidden></p>
+        </div>
+        <div class="field-row">
+          <div class="field">
+            <label for="t-delivery-floor">Etage <span class="req">*</span></label>
+            <input type="number" id="t-delivery-floor" inputmode="numeric" min="0" max="10" step="1" value="0" required>
+            <p class="field-hint">0 = Erdgeschoss</p>
+            <p class="field-error" hidden></p>
+          </div>
+          <div class="field field-check">
+            <label class="check">
+              <input type="checkbox" id="t-delivery-elevator">
+              <span>Aufzug vorhanden <em>und</em> die Gegenstände passen hinein</span>
+            </label>
+          </div>
+        </div>
+
+        <h2>Was wird transportiert?</h2>
+        <p class="section-hint">Maße bitte pro Gegenstand angeben – wir rechnen automatisch
+           eine kleine Sicherheitsmarge dazu.</p>
+        <div id="t-items" class="items"></div>
+        <button type="button" id="t-add-item" class="btn-secondary">+ Gegenstand hinzufügen</button>
+        <p class="field-error" id="t-items-error" role="alert" hidden></p>
+
+        <h2>Tragen</h2>
+        <div class="field">
+          <span class="label-like">Wird ein zweiter Träger benötigt? <span class="req">*</span></span>
+          <div class="radio-row" role="radiogroup" aria-label="Zweiter Träger benötigt">
+            <label class="check"><input type="radio" name="t-helper" value="nein" checked><span>Nein, eine Person reicht</span></label>
+            <label class="check"><input type="radio" name="t-helper" value="ja"><span>Ja, es muss zu zweit getragen werden</span></label>
+          </div>
+        </div>
+        <div class="field" id="t-self-help-wrap" hidden>
+          <label class="check">
+            <input type="checkbox" id="t-self-help">
+            <span>Ich packe selbst mit an (kein Aufpreis für den zweiten Träger)</span>
+          </label>
+        </div>
+
+        <h2>Ihre Angaben</h2>
+        <div class="field-row">
+          <div class="field">
+            <label for="t-date">Wunschtermin <span class="opt">(optional)</span></label>
+            <input type="date" id="t-date">
+            <p class="field-error" hidden></p>
+          </div>
+          <div class="field">
+            <label for="t-name">Name <span class="opt">(optional)</span></label>
+            <input type="text" id="t-name" autocomplete="name" placeholder="Vor- und Nachname">
+          </div>
+        </div>
+
+        <button type="submit" class="btn-primary" id="t-submit">
+          <span class="btn-label">Preis berechnen</span>
+          <span class="btn-spinner" hidden aria-hidden="true"></span>
+        </button>
+        <p class="form-error" id="t-form-error" role="alert" hidden></p>
+      </form>
+
+      <div class="card result-card" id="t-result" hidden role="status" aria-live="polite"></div>
+    </section>
+
+    <!-- ══════════════ BEREICH 2: SONDERFAHRT ══════════════ -->
+    <section id="sonderfahrt" class="panel" aria-label="Sonderfahrt">
+      <div class="card intro-card">
+        <h1>Sonderfahrten ab Stuttgart</h1>
+        <p>Kurzfristig etwas zu transportieren? Wir fahren Einzeltransporte ab Stuttgart –
+           exklusiv für Sie, zum festen Kilometerpreis von
+           <strong><span data-config="sonderfahrtPerKm"></span>&nbsp;€/km</strong>
+           (Hin- und Rückfahrt ab unserem Standort).</p>
+      </div>
+
+      <form id="form-sonderfahrt" class="card" novalidate>
+        <h2>Strecke</h2>
+        <div class="field">
+          <label for="s-pickup-address">Abholadresse <span class="req">*</span></label>
+          <div class="ac-wrap">
+            <input type="text" id="s-pickup-address" autocomplete="off" spellcheck="false"
+                   placeholder="Straße Hausnummer, PLZ Ort" required>
+          </div>
+          <p class="field-error" hidden></p>
+        </div>
+        <div class="field">
+          <label for="s-dest-address">Zieladresse <span class="req">*</span></label>
+          <div class="ac-wrap">
+            <input type="text" id="s-dest-address" autocomplete="off" spellcheck="false"
+                   placeholder="Straße Hausnummer, PLZ Ort" required>
+          </div>
+          <p class="field-error" hidden></p>
+        </div>
+
+        <h2>Termin</h2>
+        <div class="field-row">
+          <div class="field">
+            <label for="s-date">Datum <span class="req">*</span></label>
+            <input type="date" id="s-date" required>
+            <p class="field-error" hidden></p>
+          </div>
+          <div class="field">
+            <label for="s-time">Uhrzeit <span class="req">*</span></label>
+            <input type="time" id="s-time" required>
+            <p class="field-error" hidden></p>
+          </div>
+        </div>
+
+        <h2>Ladung</h2>
+        <div class="field">
+          <label for="s-desc">Was wird transportiert? <span class="req">*</span></label>
+          <textarea id="s-desc" rows="3" required
+                    placeholder="z. B. Waschmaschine, ca. 70 kg – oder: 10 Umzugskartons und ein Sofa"></textarea>
+          <p class="field-error" hidden></p>
+        </div>
+        <div class="field-row">
+          <div class="field">
+            <label for="s-pickup-floor">Etage Abholung <span class="opt">(optional, nur zur Info)</span></label>
+            <input type="number" id="s-pickup-floor" inputmode="numeric" min="0" max="10" step="1">
+          </div>
+          <div class="field">
+            <label for="s-dest-floor">Etage Ziel <span class="opt">(optional, nur zur Info)</span></label>
+            <input type="number" id="s-dest-floor" inputmode="numeric" min="0" max="10" step="1">
+          </div>
+        </div>
+        <div class="field">
+          <label for="s-name">Name <span class="opt">(optional)</span></label>
+          <input type="text" id="s-name" autocomplete="name" placeholder="Vor- und Nachname">
+        </div>
+
+        <button type="submit" class="btn-primary" id="s-submit">
+          <span class="btn-label">Preis berechnen</span>
+          <span class="btn-spinner" hidden aria-hidden="true"></span>
+        </button>
+        <p class="form-error" id="s-form-error" role="alert" hidden></p>
+      </form>
+
+      <div class="card result-card" id="s-result" hidden role="status" aria-live="polite"></div>
+    </section>
+
+    <!-- ══════════════ BEREICH 3: PUTZSERVICE ══════════════ -->
+    <section id="putzservice" class="panel" aria-label="Putzservice">
+      <div class="card intro-card">
+        <h1>Putzservice in Stuttgart</h1>
+        <p>Zuverlässige Reinigung in Stuttgart und näherer Umgebung –
+           <strong><span data-config="cleaningRate"></span>&nbsp;€ pro Stunde und Reinigungskraft</strong>
+           zzgl. Anfahrt (<span data-config="cleaningTravelRange"></span>&nbsp;€ je nach Entfernung),
+           Mindestbuchung <span data-config="cleaningMinHours"></span>&nbsp;Stunden.</p>
+      </div>
+
+      <form id="form-putzservice" class="card" novalidate>
+        <h2>Leistung</h2>
+        <div class="field">
+          <label for="p-service">Welche Reinigung benötigen Sie? <span class="req">*</span></label>
+          <select id="p-service" required></select>
+        </div>
+        <div class="field">
+          <label for="p-address">Adresse oder PLZ/Ort <span class="req">*</span></label>
+          <div class="ac-wrap">
+            <input type="text" id="p-address" autocomplete="off" spellcheck="false"
+                   placeholder="Straße Hausnummer, PLZ Ort" required>
+          </div>
+          <p class="field-error" hidden></p>
+        </div>
+
+        <h2>Umfang</h2>
+        <div class="field-row">
+          <div class="field">
+            <label for="p-hours">Geschätzte Stunden <span class="req">*</span></label>
+            <input type="number" id="p-hours" inputmode="numeric" min="1" max="12" step="1" value="2" required>
+            <p class="field-hint">Mindestbuchung: <span data-config="cleaningMinHours"></span> Stunden</p>
+            <p class="field-error" hidden></p>
+          </div>
+          <div class="field">
+            <label for="p-staff">Anzahl Reinigungskräfte <span class="req">*</span></label>
+            <input type="number" id="p-staff" inputmode="numeric" min="1" max="4" step="1" value="1" required>
+            <p class="field-error" hidden></p>
+          </div>
+        </div>
+
+        <div class="field-row">
+          <div class="field">
+            <label for="p-date">Wunschtermin <span class="opt">(optional)</span></label>
+            <input type="date" id="p-date">
+            <p class="field-error" hidden></p>
+          </div>
+          <div class="field">
+            <label for="p-name">Name <span class="opt">(optional)</span></label>
+            <input type="text" id="p-name" autocomplete="name" placeholder="Vor- und Nachname">
+          </div>
+        </div>
+
+        <button type="submit" class="btn-primary" id="p-submit">
+          <span class="btn-label">Preis berechnen</span>
+          <span class="btn-spinner" hidden aria-hidden="true"></span>
+        </button>
+        <p class="form-error" id="p-form-error" role="alert" hidden></p>
+      </form>
+
+      <div class="card result-card" id="p-result" hidden role="status" aria-live="polite"></div>
+    </section>
+
+  </main>
+
+  <footer class="site-footer">
+    <div class="wrap">
+      <p>Alle Preise sind Endpreise. Gemäß §&nbsp;19 UStG wird keine Umsatzsteuer berechnet.</p>
+      <p>Der berechnete Preis gilt <span data-config="priceValidityDays"></span>&nbsp;Tage ab Berechnung
+         (der Transportpreis nach Berlin richtet sich nach dem tagesaktuellen Dieselpreis).</p>
+      <p class="footer-links">
+        <a href="#" id="impressum-link">Impressum</a>
+      </p>
+      <div id="impressum" class="impressum" hidden>
+        <h3>Impressum</h3>
+        <p><!-- IMPRESSUM-PLATZHALTER: Hier Name, Anschrift, Kontakt und ggf. USt-IdNr. eintragen (Pflichtangaben nach § 5 DDG). -->
+           Gaus Dienstleistungen<br>
+           [Straße Hausnummer]<br>
+           [PLZ] Stuttgart<br>
+           [Telefonnummer] · [E-Mail-Adresse]</p>
+      </div>
+    </div>
+  </footer>
+
+  <script src="app.js"></script>
+</body>
+</html>
