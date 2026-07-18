@@ -238,8 +238,11 @@ var CONFIG = {
     var handlingHours = handlingHoursFor(totals.weightKg, input.pickup, input.delivery);
     var handlingSelfCost = handlingHours * CONFIG.fahrerStundensatzEur;
 
+    // Beifahrer: Tragezeit voll + Fahrzeit anteilig nach Ladevolumen
+    // (er sitzt die Tour ja mit im Auto, geteilt durch alle Kunden der Fahrt)
     var helperSelfCost = (input.helperNeeded && !input.customerHelps)
-      ? handlingHours * CONFIG.beifahrerStundensatzEur
+      ? handlingHours * CONFIG.beifahrerStundensatzEur +
+        hours * CONFIG.beifahrerStundensatzEur * share
       : 0;
 
     var selbstkosten = vehicleCost + driverDriveCost + handlingSelfCost + helperSelfCost;
@@ -398,9 +401,9 @@ var CONFIG = {
     check("Beispiel: Selbstkosten 99,24 €", abhol.subtotal, 99.24065);
     check("Beispiel: Gesamtpreis 100 €", abhol.total, 100);
 
-    // Beifahrer: Handling-Zeit × 30 € zusätzlich
+    // Beifahrer: Tragezeit voll (30 €) + Fahrzeit anteilig (9,4×30×10,93 % = 30,81 €)
     var helper = calculateBerlinPrice(berlinInput({ helperNeeded: true, customerHelps: false }));
-    check("Beifahrer => +30 € (60 Min. × 30 €), gesamt 130 €", helper.total, 130);
+    check("Beifahrer => +60,81 €, gesamt 161 €", helper.total, 161);
     var helperSelf = calculateBerlinPrice(berlinInput({ helperNeeded: true, customerHelps: true }));
     check("Kunde hilft selbst => Beifahrer 0 €", helperSelf.helperCost, 0);
 
