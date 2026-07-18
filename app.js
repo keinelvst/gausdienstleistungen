@@ -48,11 +48,13 @@ var CONFIG = {
   etagenProM3Eur: 5,             // € zusätzlich je Etage, je m³ Ladung
   aufzugFaktor: 0.30,            // Aufzug vorhanden (und passt) => nur 30 % des Etagenzuschlags
 
-  // Zuschlag je EINZELSTÜCK nach dessen Gewicht (Reihenfolge: leicht -> schwer)
+  // Zuschlag je EINZELSTÜCK nach dessen Gewicht.
+  // Reihenfolge: schwerste Stufe zuerst; die erste passende Stufe zählt.
+  // Unter der leichtesten Stufe (hier 40 kg) gibt es keinen Aufpreis.
   schwergutStaffel: [
-    { bisKg: 39,  eur: 0 },      // bis 39 kg: kein Aufpreis
-    { bisKg: 69,  eur: 15 },     // 40–69 kg
-    { bisKg: 99,  eur: 30 }      // 70–99 kg
+    { abKg: 80, eur: 80 },       // 80 bis unter 100 kg
+    { abKg: 60, eur: 60 },       // 60 bis unter 80 kg
+    { abKg: 40, eur: 30 }        // 40 bis unter 60 kg
   ],
   maxEinzelstueckKg: 100,        // ab hier kein Online-Preis mehr => "bitte anfragen"
 
@@ -231,12 +233,13 @@ var CONFIG = {
   }
 
   // Schwergut-Zuschlag in €: je Einzelstück nach dessen Gewicht, mal Anzahl.
+  // Die Staffel ist von schwer nach leicht sortiert – die erste passende Stufe gilt.
   function heavyItemSurchargeEur(items) {
     var sum = 0;
+    var staffel = CONFIG.schwergutStaffel;
     for (var i = 0; i < items.length; i++) {
-      var staffel = CONFIG.schwergutStaffel;
       for (var s = 0; s < staffel.length; s++) {
-        if (items[i].weightKg <= staffel[s].bisKg) {
+        if (items[i].weightKg >= staffel[s].abKg) {
           sum += staffel[s].eur * items[i].qty;
           break;
         }
@@ -435,11 +438,16 @@ var CONFIG = {
       floorSurchargeEur(2, { floors: 2, elevator: false }, { floors: 2, elevator: false }), 80);
     check("Etagen: Erdgeschoss => 0 €", floorSurchargeEur(2, eg, eg), 0);
 
-    // Schwergut-Staffel je Einzelstück
+    // Schwergut-Staffel je Einzelstück: ab 40 kg 30 €, ab 60 kg 60 €, ab 80 kg 80 €
     check("Schwergut 30 kg => 0 €", heavyItemSurchargeEur([{ weightKg: 30, qty: 1 }]), 0);
-    check("Schwergut 45 kg => 15 €", heavyItemSurchargeEur([{ weightKg: 45, qty: 1 }]), 15);
-    check("Schwergut 70 kg => 30 €", heavyItemSurchargeEur([{ weightKg: 70, qty: 1 }]), 30);
-    check("Schwergut 2 Stück à 70 kg => 60 €", heavyItemSurchargeEur([{ weightKg: 70, qty: 2 }]), 60);
+    check("Schwergut 39,9 kg => 0 €", heavyItemSurchargeEur([{ weightKg: 39.9, qty: 1 }]), 0);
+    check("Schwergut 40 kg => 30 €", heavyItemSurchargeEur([{ weightKg: 40, qty: 1 }]), 30);
+    check("Schwergut 59,9 kg => 30 €", heavyItemSurchargeEur([{ weightKg: 59.9, qty: 1 }]), 30);
+    check("Schwergut 60 kg => 60 €", heavyItemSurchargeEur([{ weightKg: 60, qty: 1 }]), 60);
+    check("Schwergut 70 kg => 60 €", heavyItemSurchargeEur([{ weightKg: 70, qty: 1 }]), 60);
+    check("Schwergut 80 kg => 80 €", heavyItemSurchargeEur([{ weightKg: 80, qty: 1 }]), 80);
+    check("Schwergut 99 kg => 80 €", heavyItemSurchargeEur([{ weightKg: 99, qty: 1 }]), 80);
+    check("Schwergut 2 Stück à 70 kg => 120 €", heavyItemSurchargeEur([{ weightKg: 70, qty: 2 }]), 120);
 
     // Modellwahl
     checkTrue("Ludwigsburg (18 km, nördlich) => Abholfahrt", chooseKmModel({ lat: 48.90, lon: 9.19 }) === "abholfahrt");
@@ -490,7 +498,7 @@ var CONFIG = {
     var mitSchwergut = calculateBerlinPrice(berlinInput({
       items: [{ lengthCm: 100, widthCm: 100, heightCm: 100, weightKg: 70, qty: 1 }]
     }));
-    check("70-kg-Stück => +30 € Schwergut, gesamt 145 €", mitSchwergut.total, 145);
+    check("70-kg-Stück => +60 € Schwergut, gesamt 175 €", mitSchwergut.total, 175);
     var zuSchwer = calculateBerlinPrice(berlinInput({
       items: [{ lengthCm: 60, widthCm: 60, heightCm: 60, weightKg: 100, qty: 1 }]
     }));
