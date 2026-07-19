@@ -312,6 +312,132 @@
   }
 
   // ══════════════════════════════════════════════════════════════════
+  //  BEISPIELDATEN ZUM ÜBEN
+  // ══════════════════════════════════════════════════════════════════
+
+  // Erfundene Anfragen, mit denen sich der Tourenplaner ausprobieren lässt.
+  // Bewusst so gewählt, dass alle Fälle vorkommen: Abholung rund um
+  // Stuttgart und unterwegs, Lieferung im Zielgebiet und auf der Strecke,
+  // beide Fahrtrichtungen – und zusammen deutlich mehr Volumen, als in
+  // einen Transporter passt, damit die Aufteilung sichtbar wird.
+  var BEISPIELE = [
+    // ── Stuttgart → Berlin ───────────────────────────────────────────
+    { b: "beiladung_hin", n: "Familie Weber", t: "+4917010000001", v: 2.4, g: 180, p: 412,
+      a: ["Bahnhofstraße 4, 73728 Esslingen", 48.7404, 9.3068, 3, false],
+      l: ["Kastanienallee 12, 10435 Berlin", 52.5385, 13.4244, 0, false] },
+    { b: "beiladung_hin", n: "Herr Novak", t: "+4917010000002", v: 1.2, g: 95, p: 268,
+      a: ["Hauptstraße 20, 71032 Böblingen", 48.6856, 9.0116, 0, false],
+      l: ["Karl-Marx-Straße 90, 12043 Berlin", 52.4750, 13.4410, 4, true] },
+    { b: "beiladung_hin", n: "Frau Aydin", t: "+4917010000003", v: 3.6, g: 290, p: 530,
+      a: ["Wilhelmstraße 8, 70182 Stuttgart", 48.7758, 9.1829, 1, false],
+      l: ["Frankfurter Allee 40, 10247 Berlin", 52.5150, 13.4540, 2, false] },
+    { b: "beiladung_hin", n: "Bau Meier GmbH", t: "+4917010000004", v: 5.1, g: 470, p: 690,
+      a: ["Gewerbestraße 15, 71063 Sindelfingen", 48.7106, 9.0027, 0, false],
+      l: ["Chausseestraße 5, 10115 Berlin", 52.5200, 13.4050, 0, false] },
+    { b: "beiladung_hin", n: "Frau Klein", t: "+4917010000005", v: 1.8, g: 140, p: 320,
+      a: ["Poststraße 4, 71229 Leonberg", 48.8000, 9.0155, 2, false],
+      l: ["Turmstraße 20, 10559 Berlin", 52.5270, 13.3420, 1, false] },
+    // Lieferung unterwegs auf der Route
+    { b: "beiladung_hin", n: "Herr Öztürk", t: "+4917010000006", v: 0.9, g: 60, p: 165,
+      a: ["Marktplatz 8, 71638 Ludwigsburg", 48.8974, 9.1916, 0, false],
+      l: ["Markt 1, 04109 Leipzig", 51.3397, 12.3731, 0, false] },
+    { b: "beiladung_hin", n: "Studio Lichtblick", t: "+4917010000007", v: 1.4, g: 110, p: 190,
+      a: ["Allee 30, 74072 Heilbronn", 49.1427, 9.2109, 0, false],
+      l: ["Hauptmarkt 6, 90403 Nürnberg", 49.4539, 11.0775, 0, false] },
+    // Abholung unterwegs auf der Route
+    { b: "beiladung_hin", n: "Frau Schuster", t: "+4917010000008", v: 0.6, g: 45, p: 145,
+      a: ["Königstraße 12, 90402 Nürnberg", 49.4539, 11.0775, 2, false],
+      l: ["Müllerstraße 40, 13353 Berlin", 52.5500, 13.3600, 0, false] },
+
+    // ── Berlin → Stuttgart (Rückweg) ─────────────────────────────────
+    { b: "beiladung_rueck", n: "Herr Baumann", t: "+4917010000009", v: 2.2, g: 170, p: 395,
+      a: ["Kantstraße 50, 10625 Berlin", 52.5165, 13.3040, 3, false],
+      l: ["Hauptstraße 22, 70563 Stuttgart", 48.7250, 9.1120, 0, false] },
+    { b: "beiladung_rueck", n: "Frau Lorenz", t: "+4917010000010", v: 1.5, g: 120, p: 305,
+      a: ["Oranienstraße 100, 10969 Berlin", 52.4980, 13.4030, 0, false],
+      l: ["Kirchstraße 6, 73728 Esslingen", 48.7404, 9.3068, 2, false] },
+    { b: "beiladung_rueck", n: "Möbel Kranz", t: "+4917010000011", v: 3.0, g: 250, p: 430,
+      a: ["Klosterstraße 3, 13581 Berlin", 52.5350, 13.2000, 0, false],
+      l: ["Hauptmarkt 6, 90403 Nürnberg", 49.4539, 11.0775, 0, false] },
+
+    // ── Sonderfahrten (Raum Stuttgart) ───────────────────────────────
+    { b: "sonderfahrt", n: "Herr Dreher", t: "+4917010000012", v: 1.6, g: 220, p: 240,
+      a: ["Marktplatz 1, 70173 Stuttgart", 48.7758, 9.1829, 0, false],
+      l: ["Am Markt 5, 72070 Tübingen", 48.5216, 9.0576, 1, false],
+      d: { ladung: "Klavier, sehr vorsichtig", uhrzeit: "09:00" } },
+    { b: "sonderfahrt", n: "Frau Pilz", t: "+4917010000013", v: 2.8, g: 150, p: 310,
+      a: ["Cannstatter Straße 2, 70734 Fellbach", 48.8092, 9.2760, 0, false],
+      l: ["Kaiserstraße 100, 76133 Karlsruhe", 49.0069, 8.4037, 0, false],
+      d: { ladung: "Ladeneinrichtung, 6 Kartons + 2 Regale", uhrzeit: "14:30" } }
+  ];
+
+  function beispielDatensatz(x) {
+    var daten = { beispiel: true, gegenstaende: [] };
+    for (var k in (x.d || {})) daten[k] = x.d[k];
+    if (x.b === "beiladung_rueck") daten.richtung = "rueck";
+    else if (x.b === "beiladung_hin") daten.richtung = "hin";
+    return {
+      bereich: x.b, status: "neu",
+      name: "BEISPIEL " + x.n, telefon: x.t, wunschtermin: null, preis_eur: x.p,
+      abhol_label: x.a[0], abhol_lat: x.a[1], abhol_lon: x.a[2],
+      abhol_etage: x.a[3], abhol_aufzug: x.a[4],
+      liefer_label: x.l[0], liefer_lat: x.l[1], liefer_lon: x.l[2],
+      liefer_etage: x.l[3], liefer_aufzug: x.l[4],
+      volumen_m3: x.v, gewicht_kg: x.g, daten: daten
+    };
+  }
+
+  function istBeispiel(a) {
+    return (a.daten && a.daten.beispiel === true) ||
+           (a.name || "").indexOf("BEISPIEL ") === 0;
+  }
+
+  function initBeispiele() {
+    var laden = $("beispiele-laden");
+    var weg = $("beispiele-entfernen");
+
+    laden.addEventListener("click", function () {
+      ladeStatus(laden, true);
+      $("beispiele-info").textContent = "Wird angelegt …";
+      // Nacheinander anlegen – die Spam-Bremse der Datenbank erlaubt
+      // höchstens 20 Anfragen pro Minute.
+      var kette = Promise.resolve();
+      var fehler = 0;
+      BEISPIELE.forEach(function (x) {
+        kette = kette.then(function () {
+          return DB.anfrageAnlegen(beispielDatensatz(x)).catch(function () { fehler++; });
+        });
+      });
+      kette.then(function () {
+        $("beispiele-info").textContent = fehler
+          ? (BEISPIELE.length - fehler) + " von " + BEISPIELE.length + " angelegt – " + fehler +
+            " abgewiesen (Spam-Bremse: höchstens 20 pro Minute). Kurz warten und erneut klicken."
+          : BEISPIELE.length + " Beispielanfragen angelegt. Jetzt im Tourenplaner ausprobieren!";
+        ladeStatus(laden, false);
+        ladeAnfragen();
+      });
+    });
+
+    weg.addEventListener("click", function () {
+      var treffer = alleAnfragen.filter(istBeispiel);
+      if (!treffer.length) {
+        $("beispiele-info").textContent = "Es sind keine Beispieldaten vorhanden.";
+        return;
+      }
+      if (!confirm("Alle " + treffer.length + " Beispielanfragen entfernen? " +
+                   "Echte Kundenanfragen bleiben unberührt.")) return;
+      ladeStatus(weg, true);
+      Promise.all(treffer.map(function (a) {
+        return DB.anfrageLoeschen(a.id).catch(function () {});
+      })).then(function () {
+        $("beispiele-info").textContent = treffer.length + " Beispielanfragen entfernt.";
+        ladeStatus(weg, false);
+        ladeAnfragen();
+      });
+    });
+  }
+
+  // ══════════════════════════════════════════════════════════════════
   //  ENTFERNUNGSMATRIX
   // ══════════════════════════════════════════════════════════════════
 
@@ -973,6 +1099,7 @@
 
     initLogin();
     initAnfragen();
+    initBeispiele();
     initTourBearbeitung();
     initTourSpeichern();
 
