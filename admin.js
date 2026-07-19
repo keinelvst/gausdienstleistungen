@@ -681,32 +681,20 @@
     return Math.round(etage * 3 * (aufzug ? 0.33 : 1));
   }
 
-  function berechneTour() {
-    var btn = $("planer-berechnen");
-    zeigeFehler("planer-error", "");
-    var anfragen = gewaehlteAnfragen();
-    if (!anfragen.length) {
-      zeigeFehler("planer-error", "Bitte mindestens eine Anfrage auswählen.");
-      return;
-    }
+  // Baut aus einer Liste Anfragen die Punkte und Sendungspaare für den
+  // Routenrechner. Wird von der manuellen und der automatischen Planung
+  // gemeinsam benutzt, damit beide identisch rechnen.
+  function baueAufbau(anfragen, richtung) {
+    var start = (richtung === "beiladung_rueck") ? window.CONFIG.destination : window.CONFIG.depot;
+    var ziel = (richtung === "sonderfahrt") ? window.CONFIG.depot : null;
 
-    var richtung = $("planer-richtung").value;
-    var start, ziel = null;
-    if (richtung === "beiladung_rueck") {
-      start = window.CONFIG.destination;          // Berlin
-    } else {
-      start = window.CONFIG.depot;                // Stuttgart
-    }
-    if (richtung === "sonderfahrt") ziel = window.CONFIG.depot;   // zurück zum Standort
-
-    // Punkte und Stopps aufbauen
     var punkte = [{ lat: start.lat, lon: start.lon }];
-    var startIdx = 0;
     var sendungen = anfragen.map(function (a, n) {
       var pi = punkte.push({ lat: a.abhol_lat, lon: a.abhol_lon }) - 1;
       var li = punkte.push({ lat: a.liefer_lat, lon: a.liefer_lon }) - 1;
       var vol = Number(a.volumen_m3) || 0;
       return {
+        preis: Number(a.preis_eur) || 0,
         abholung: {
           art: "abholung", paar: n, pIdx: pi, anfrageId: a.id,
           label: a.abhol_label, lat: a.abhol_lat, lon: a.abhol_lon,
@@ -727,31 +715,50 @@
     var zielIdx = null;
     if (ziel) zielIdx = punkte.push({ lat: ziel.lat, lon: ziel.lon }) - 1;
 
+    return {
+      start: { art: "start", label: start.label, lat: start.lat, lon: start.lon, pIdx: 0, dauerMin: 0 },
+      ziel: ziel ? { art: "ziel", label: ziel.label, lat: ziel.lat, lon: ziel.lon, pIdx: zielIdx, dauerMin: 0 } : null,
+      punkte: punkte, sendungen: sendungen, startIdx: 0, zielIdx: zielIdx
+    };
+  }
+
+  function maxSekAusFeld() {
+    return (parseFloat($("planer-maxstunden").value) || window.CONFIG.maxTourStunden) * 3600;
+  }
+
+  function tourName(richtung) {
+    return (richtung === "beiladung_rueck" ? "Berlin → Stuttgart" :
+            richtung === "sonderfahrt" ? "Sonderfahrten" : "Stuttgart → Berlin") +
+           " " + ($("planer-datum").value || heuteIso());
+  }
+
+  function berechneTour() {
+    var btn = $("planer-berechnen");
+    zeigeFehler("planer-error", "");
+    var anfragen = gewaehlteAnfragen();
+    if (!anfragen.length) {
+      zeigeFehler("planer-error", "Bitte mindestens eine Anfrage auswählen.");
+      return;
+    }
+
+    var richtung = $("planer-richtung").value;
+    var aufbau = baueAufbau(anfragen, richtung);
+
     ladeStatus(btn, true);
-    ladeMatrix(punkte).then(function (matrix) {
+    ladeMatrix(aufbau.punkte).then(function (matrix) {
       var ctx = {
-        matrix: matrix, startIdx: startIdx, zielIdx: zielIdx,
-        kapazitaet: window.CONFIG.vanVolumeM3,
-        maxSek: (parseFloat($("planer-maxstunden").value) || window.CONFIG.maxTourStunden) * 3600
+        matrix: matrix, startIdx: aufbau.startIdx, zielIdx: aufbau.zielIdx,
+        kapazitaet: window.CONFIG.vanVolumeM3, maxSek: maxSekAusFeld()
       };
-      var loesung = planeRoute(sendungen, ctx);
+      var loesung = planeRoute(aufbau.sendungen, ctx);
 
       aktuelleTour = {
-        richtung: richtung,
-        start: { art: "start", label: start.label, lat: start.lat, lon: start.lon, pIdx: startIdx, dauerMin: 0 },
-        ziel: ziel ? { art: "ziel", label: ziel.label, lat: ziel.lat, lon: ziel.lon, pIdx: zielIdx, dauerMin: 0 } : null,
-        stopps: loesung.reihenfolge,
-        nichtEingeplant: loesung.nichtEingeplant,
-        punkte: punkte,
-        ctx: ctx,
-        gespeichertId: null
+        richtung: richtung, start: aufbau.start, ziel: aufbau.ziel,
+        stopps: loesung.reihenfolge, nichtEingeplant: loesung.nichtEingeplant,
+        punkte: aufbau.punkte, ctx: ctx, gespeichertId: null
       };
 
-      if (!$("tour-name").value.trim()) {
-        $("tour-name").value = (richtung === "beiladung_rueck" ? "Berlin → Stuttgart" :
-                                richtung === "sonderfahrt" ? "Sonderfahrten" : "Stuttgart → Berlin") +
-                               " " + ($("planer-datum").value || heuteIso());
-      }
+      if (!$("tour-name").value.trim()) $("tour-name").value = tourName(richtung);
       $("tour-card").hidden = false;
       zeichneTour();
       $("tour-card").scrollIntoView({ behavior: "smooth", block: "start" });
@@ -760,6 +767,252 @@
     }).then(function () {
       ladeStatus(btn, false);
     });
+  }
+
+  // ══════════════════════════════════════════════════════════════════
+  //  TOUREN AUTOMATISCH BILDEN
+  // ══════════════════════════════════════════════════════════════════
+
+  // Nimmt ALLE offenen Anfragen einer Richtung und teilt sie selbstständig
+  // auf so wenige Touren wie möglich auf: Es wird immer die Tour gebildet,
+  // die am besten zusammenpasst, deren Sendungen entfernt, und mit dem
+  // Rest weitergemacht – bis nichts mehr übrig ist.
+  // Wichtig: EINE Entfernungsmatrix für alles, danach rechnet jede Runde
+  // ohne weitere Netzanfrage.
+  var tourVorschlaege = [];
+
+  function toureAutomatisch() {
+    var btn = $("planer-auto");
+    zeigeFehler("planer-error", "");
+    var richtung = $("planer-richtung").value;
+    var anfragen = planbareAnfragen();
+
+    if (!anfragen.length) {
+      zeigeFehler("planer-error", "Keine offenen Anfragen in dieser Richtung.");
+      return;
+    }
+    // Die Matrix erlaubt höchstens 50 Punkte (Start + 2 je Anfrage).
+    var maxAnfragen = 24;
+    var gekuerzt = 0;
+    if (anfragen.length > maxAnfragen) {
+      gekuerzt = anfragen.length - maxAnfragen;
+      anfragen = anfragen.slice(0, maxAnfragen);
+    }
+
+    var aufbau = baueAufbau(anfragen, richtung);
+
+    ladeStatus(btn, true);
+    ladeMatrix(aufbau.punkte).then(function (matrix) {
+      var ctx = {
+        matrix: matrix, startIdx: aufbau.startIdx, zielIdx: aufbau.zielIdx,
+        kapazitaet: window.CONFIG.vanVolumeM3, maxSek: maxSekAusFeld()
+      };
+
+      var offen = aufbau.sendungen.slice();
+      var touren = [];
+      // Sicherheitsgrenze, damit die Schleife bei einem unlösbaren Rest
+      // niemals endlos läuft.
+      while (offen.length && touren.length < 12) {
+        var loesung = planeRoute(offen, ctx);
+        if (!loesung.reihenfolge.length) break;   // nichts davon passt mehr
+        var drin = {};
+        loesung.reihenfolge.forEach(function (s) { drin[s.paar] = true; });
+        touren.push({
+          stopps: loesung.reihenfolge,
+          sendungen: offen.filter(function (s) { return drin[s.abholung.paar]; })
+        });
+        offen = offen.filter(function (s) { return !drin[s.abholung.paar]; });
+      }
+
+      tourVorschlaege = touren.map(function (t, i) {
+        var b = bewerte(t.stopps, ctx);
+        var umsatz = t.sendungen.reduce(function (s, x) { return s + x.preis; }, 0);
+        return {
+          nummer: i + 1, richtung: richtung, stopps: t.stopps, sendungen: t.sendungen,
+          start: aufbau.start, ziel: aufbau.ziel, punkte: aufbau.punkte, ctx: ctx,
+          bewertung: b, umsatz: umsatz
+        };
+      });
+
+      zeichneVorschlaege(offen, gekuerzt);
+      $("auto-card").hidden = false;
+      $("auto-card").scrollIntoView({ behavior: "smooth", block: "start" });
+    }).catch(function (err) {
+      zeigeFehler("planer-error", "Die Touren konnten nicht gebildet werden: " + (err.message || ""));
+    }).then(function () {
+      ladeStatus(btn, false);
+    });
+  }
+
+  function zeichneVorschlaege(uebrig, gekuerzt) {
+    var box = $("auto-liste");
+    if (!tourVorschlaege.length) {
+      box.innerHTML = '<p class="admin-leer">Es passt keine einzige Anfrage in eine Tour. ' +
+                      'Meist ist die Höchstfahrzeit zu niedrig für diese Strecke.</p>';
+      return;
+    }
+
+    var hinweise = [];
+    if (gekuerzt) {
+      hinweise.push(gekuerzt + " weitere Anfragen wurden nicht berücksichtigt – pro Durchlauf " +
+                    "sind höchstens 24 möglich. Plane die erste Runde, dann bleibt der Rest übrig.");
+    }
+    if (uebrig && uebrig.length) {
+      hinweise.push(uebrig.length + " Anfrage(n) passen in keine Tour: " +
+                    uebrig.map(function (s) {
+                      return (s.abholung.name || "Ohne Namen") + " (" + fmtNum(s.abholung.volumen, 2) + " m³)";
+                    }).join(", ") + ".");
+    }
+
+    box.innerHTML =
+      hinweise.map(function (h) { return '<p class="tour-warnung">' + esc(h) + "</p>"; }).join("") +
+      tourVorschlaege.map(function (v) {
+        var b = v.bewertung;
+        var proKm = b.km > 0 ? v.umsatz / b.km : 0;
+        return '<article class="vorschlag">' +
+          '<div class="ak-kopf"><div>' +
+            '<p class="ak-titel">Tour ' + v.nummer + ' · ' + v.sendungen.length + ' Anfragen</p>' +
+            '<p class="ak-zeit">' + esc(v.sendungen.map(function (s) {
+              return s.abholung.name || "Ohne Namen";
+            }).join(", ")) + '</p>' +
+          '</div><div class="ak-rechts">' +
+            '<span class="ak-preis">' + fmtEur0(v.umsatz) + '</span>' +
+            '<span class="ak-klein">' + fmtNum(proKm, 2) + ' €/km</span>' +
+          '</div></div>' +
+          '<div class="vorschlag-zahlen">' +
+            '<span><strong>' + fmtKm(b.km) + '</strong> Strecke</span>' +
+            '<span><strong>' + stunden(b.fahrSek) + '</strong> Fahrzeit</span>' +
+            '<span><strong>' + stunden(b.gesamtSek) + '</strong> gesamt</span>' +
+            '<span><strong>' + fmtNum(b.maxLadung, 2) + ' m³</strong> von ' +
+              fmtNum(window.CONFIG.vanVolumeM3, 1) + ' m³</span>' +
+          '</div>' +
+          '<div class="ak-aktionen">' +
+            '<button type="button" class="btn-secondary btn-small" data-oeffnen="' + (v.nummer - 1) +
+              '">Öffnen und bearbeiten</button>' +
+            '<button type="button" class="btn-ghost" data-maps="' + (v.nummer - 1) +
+              '">In Google Maps</button>' +
+            '<button type="button" class="btn-ghost" data-teilen="' + (v.nummer - 1) +
+              '">Link teilen</button>' +
+          '</div>' +
+        '</article>';
+      }).join("");
+  }
+
+  function vorschlagOeffnen(i) {
+    var v = tourVorschlaege[i];
+    if (!v) return;
+    aktuelleTour = {
+      richtung: v.richtung, start: v.start, ziel: v.ziel,
+      stopps: v.stopps.slice(), nichtEingeplant: [],
+      punkte: v.punkte, ctx: v.ctx, gespeichertId: null
+    };
+    $("tour-name").value = tourName(v.richtung) + " – Tour " + v.nummer;
+    $("tour-card").hidden = false;
+    zeichneTour();
+    $("tour-card").scrollIntoView({ behavior: "smooth", block: "start" });
+  }
+
+  // ══════════════════════════════════════════════════════════════════
+  //  GOOGLE MAPS
+  // ══════════════════════════════════════════════════════════════════
+
+  // Google Maps nimmt über einen Link höchstens 9 Zwischenstopps
+  // (plus Start und Ziel). Längere Touren werden deshalb in mehrere
+  // Abschnitte geteilt; der letzte Stopp eines Abschnitts ist der erste
+  // des nächsten, damit keine Lücke entsteht.
+  var MAPS_MAX_ZWISCHEN = 9;
+
+  function mapsAbschnitte(punkte) {
+    var proLink = MAPS_MAX_ZWISCHEN + 2;      // Start + 9 Zwischenstopps + Ziel
+    if (punkte.length < 2) return [];
+    var teile = [];
+    var i = 0;
+    while (i < punkte.length - 1) {
+      var teil = punkte.slice(i, i + proLink);
+      teile.push(teil);
+      i += proLink - 1;                       // Überlappung um einen Punkt
+    }
+    return teile;
+  }
+
+  function mapsLink(teil) {
+    function koord(p) { return p.lat + "," + p.lon; }
+    var url = "https://www.google.com/maps/dir/?api=1&travelmode=driving" +
+              "&origin=" + encodeURIComponent(koord(teil[0])) +
+              "&destination=" + encodeURIComponent(koord(teil[teil.length - 1]));
+    var zwischen = teil.slice(1, -1);
+    if (zwischen.length) {
+      url += "&waypoints=" + zwischen.map(function (p) {
+        return encodeURIComponent(koord(p));
+      }).join("%7C");
+    }
+    return url;
+  }
+
+  // Alle Stopps einer Tour in der geplanten Reihenfolge
+  function tourPunkte(tour) {
+    return [tour.start].concat(tour.stopps).concat(tour.ziel ? [tour.ziel] : []);
+  }
+
+  function mapsLinks(tour) {
+    return mapsAbschnitte(tourPunkte(tour)).map(mapsLink);
+  }
+
+  function tourAlsText(tour, name) {
+    var punkte = tourPunkte(tour);
+    var zeilen = [name || "Tour"];
+    var b = bewerte(tour.stopps, tour.ctx);
+    zeilen.push(fmtKm(b.km) + " · " + stunden(b.fahrSek) + " Fahrzeit · " +
+                stunden(b.gesamtSek) + " gesamt");
+    zeilen.push("──────────────");
+    punkte.forEach(function (s, i) {
+      var nr = (s.art === "start") ? "Start" : (s.art === "ziel") ? "Ende" : String(i);
+      zeilen.push(nr + ". " + (ART_NAME[s.art] || s.art) +
+                  (s.name ? " " + s.name : "") + ": " + (s.label || "") +
+                  (s.telefon ? " (" + s.telefon + ")" : ""));
+    });
+    zeilen.push("──────────────");
+    var links = mapsLinks(tour);
+    links.forEach(function (u, i) {
+      zeilen.push(links.length > 1 ? "Route Teil " + (i + 1) + ": " + u : "Route: " + u);
+    });
+    return zeilen.join("\n");
+  }
+
+  function mapsOeffnen(tour) {
+    var links = mapsLinks(tour);
+    if (!links.length) { alert("Diese Tour hat noch keine Stopps."); return; }
+    if (links.length > 1 &&
+        !confirm("Die Tour hat mehr Stopps, als Google Maps in einem Link darstellen kann.\n\n" +
+                 "Sie wird in " + links.length + " Abschnitte geteilt – es öffnen sich " +
+                 links.length + " Tabs. Fortfahren?")) return;
+    links.forEach(function (u) { window.open(u, "_blank", "noopener"); });
+  }
+
+  function tourTeilen(tour, name) {
+    var text = tourAlsText(tour, name);
+    // Auf dem Handy das übliche Teilen-Fenster (WhatsApp, SMS, Mail …)
+    if (navigator.share) {
+      navigator.share({ title: name || "Tour", text: text }).catch(function () { /* abgebrochen */ });
+      return;
+    }
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(text).then(function () {
+        alert("Die Tour wurde in die Zwischenablage kopiert – jetzt einfach einfügen.");
+      }).catch(function () { textFensterZeigen(text); });
+      return;
+    }
+    textFensterZeigen(text);
+  }
+
+  // Rückfalllösung: Text zum Markieren und Kopieren anzeigen
+  function textFensterZeigen(text) {
+    var box = $("teilen-box");
+    var feld = $("teilen-text");
+    feld.value = text;
+    box.hidden = false;
+    feld.focus();
+    feld.select();
   }
 
   // ══════════════════════════════════════════════════════════════════
@@ -1103,8 +1356,43 @@
     initTourBearbeitung();
     initTourSpeichern();
 
-    $("planer-richtung").addEventListener("change", zeichneAuswahl);
+    $("planer-richtung").addEventListener("change", function () {
+      zeichneAuswahl();
+      $("auto-card").hidden = true;      // Vorschläge gelten nur je Richtung
+      tourVorschlaege = [];
+    });
     $("planer-berechnen").addEventListener("click", berechneTour);
+    $("planer-auto").addEventListener("click", toureAutomatisch);
+    $("auto-neu").addEventListener("click", toureAutomatisch);
+    $("teilen-schliessen").addEventListener("click", function () { $("teilen-box").hidden = true; });
+
+    // Knöpfe in den Tour-Vorschlägen
+    $("auto-liste").addEventListener("click", function (ev) {
+      var el = ev.target;
+      if (!el.hasAttribute) return;
+      if (el.hasAttribute("data-oeffnen")) {
+        vorschlagOeffnen(parseInt(el.getAttribute("data-oeffnen"), 10));
+      } else if (el.hasAttribute("data-maps")) {
+        var v = tourVorschlaege[parseInt(el.getAttribute("data-maps"), 10)];
+        if (v) mapsOeffnen(v);
+      } else if (el.hasAttribute("data-teilen")) {
+        var t = tourVorschlaege[parseInt(el.getAttribute("data-teilen"), 10)];
+        if (t) tourTeilen(t, tourName(t.richtung) + " – Tour " + t.nummer);
+      }
+    });
+
+    // Export der gerade geöffneten Tour
+    $("tour-maps").addEventListener("click", function () {
+      if (aktuelleTour) mapsOeffnen(aktuelleTour);
+    });
+    $("tour-teilen").addEventListener("click", function () {
+      if (aktuelleTour) tourTeilen(aktuelleTour, $("tour-name").value.trim() || "Tour");
+    });
+    $("tour-whatsapp").addEventListener("click", function () {
+      if (!aktuelleTour) return;
+      var text = tourAlsText(aktuelleTour, $("tour-name").value.trim() || "Tour");
+      window.open("https://wa.me/?text=" + encodeURIComponent(text), "_blank", "noopener");
+    });
     $("touren-reload").addEventListener("click", ladeTouren);
     $("planer-alle").addEventListener("click", function () {
       $("planer-auswahl").querySelectorAll('input[type="checkbox"]').forEach(function (c) { c.checked = true; });
@@ -1182,6 +1470,81 @@
     // Zeitanzeige
     pruefe("Uhrzeit 07:00 + 90 Min. = 08:30", uhrzeit("07:00", 90 * 60) === "08:30");
     pruefe("Tagwechsel wird angezeigt", uhrzeit("07:00", 20 * 3600).indexOf("+1 Tag") !== -1);
+
+    // ── Google-Maps-Links ──
+    function p(n) {
+      var arr = [];
+      for (var i = 0; i < n; i++) arr.push({ lat: 48 + i / 100, lon: 9 + i / 100 });
+      return arr;
+    }
+    pruefe("4 Stopps => ein Link", mapsAbschnitte(p(4)).length === 1);
+    pruefe("11 Stopps (Grenzfall) => ein Link", mapsAbschnitte(p(11)).length === 1);
+    pruefe("12 Stopps => zwei Links", mapsAbschnitte(p(12)).length === 2);
+    pruefe("25 Stopps => drei Links", mapsAbschnitte(p(25)).length === 3);
+    pruefe("Ein einzelner Punkt ergibt keinen Link", mapsAbschnitte(p(1)).length === 0);
+
+    // Kein Stopp darf beim Teilen verlorengehen: die Abschnitte müssen
+    // lückenlos aneinander anschließen (letzter Punkt = erster des nächsten).
+    var teile = mapsAbschnitte(p(25));
+    var lueckenlos = true;
+    for (var ti = 1; ti < teile.length; ti++) {
+      var vorLetzt = teile[ti - 1][teile[ti - 1].length - 1];
+      if (vorLetzt.lat !== teile[ti][0].lat) lueckenlos = false;
+    }
+    pruefe("Abschnitte schließen lückenlos aneinander an", lueckenlos);
+    pruefe("Letzter Abschnitt endet am letzten Stopp",
+      teile[teile.length - 1][teile[teile.length - 1].length - 1].lat === p(25)[24].lat);
+    teile.forEach(function (t) {
+      if (t.length > 11) lueckenlos = false;
+    });
+    pruefe("Kein Abschnitt hat mehr als 9 Zwischenstopps", lueckenlos);
+
+    var link = mapsLink([{ lat: 48.7, lon: 9.1 }, { lat: 49.4, lon: 11.0 }, { lat: 52.5, lon: 13.4 }]);
+    pruefe("Link enthält Start", link.indexOf("origin=48.7%2C9.1") !== -1);
+    pruefe("Link enthält Ziel", link.indexOf("destination=52.5%2C13.4") !== -1);
+    pruefe("Link enthält Zwischenstopp", link.indexOf("waypoints=49.4%2C11") !== -1);
+    pruefe("Link fährt mit dem Auto", link.indexOf("travelmode=driving") !== -1);
+
+    // ── Automatische Tourenbildung ──
+    // Aufbau wie in echt: alle Abholungen rund um Stuttgart, alle
+    // Lieferungen in Berlin. Die Fahrzeitgrenze lässt nur EINEN Hauptlauf
+    // je Tour zu, also muss die Kapazität von 10 m³ die sechs Sendungen
+    // à 4 m³ auf mehrere Touren verteilen – ohne dass eine verlorengeht.
+    var vielePunkte = [{ lat: 48.74, lon: 9.13 }];
+    var vieleSendungen = [];
+    for (var si = 0; si < 6; si++) {
+      var ap = vielePunkte.push({ lat: 48.7 + si / 50, lon: 9.1 }) - 1;
+      var lp = vielePunkte.push({ lat: 52.5 + si / 50, lon: 13.4 }) - 1;
+      vieleSendungen.push({
+        preis: 100,
+        abholung:  { art: "abholung",  paar: si, pIdx: ap, volumen: 4, dauerMin: 0, label: "A" + si },
+        lieferung: { art: "lieferung", paar: si, pIdx: lp, volumen: 4, dauerMin: 0, label: "L" + si }
+      });
+    }
+    var mCtx = {
+      matrix: luftlinienMatrix(vielePunkte), startIdx: 0, zielIdx: null,
+      kapazitaet: 10, maxSek: 12 * 3600     // reicht für einen Hauptlauf, nicht für mehrere
+    };
+    var offen2 = vieleSendungen.slice();
+    var touren2 = [];
+    while (offen2.length && touren2.length < 12) {
+      var lsg = planeRoute(offen2, mCtx);
+      if (!lsg.reihenfolge.length) break;
+      var drin2 = {};
+      lsg.reihenfolge.forEach(function (s) { drin2[s.paar] = true; });
+      touren2.push(lsg.reihenfolge);
+      offen2 = offen2.filter(function (s) { return !drin2[s.abholung.paar]; });
+    }
+    pruefe("6 Sendungen à 4 m³ ergeben mehrere Touren", touren2.length > 1);
+    pruefe("Alle Sendungen sind verteilt, keine bleibt übrig", offen2.length === 0);
+    var gesamtStopps = touren2.reduce(function (s, t) { return s + t.length; }, 0);
+    pruefe("Keine Sendung doppelt oder verloren (12 Stopps)", gesamtStopps === 12);
+    var alleKapazitaetOk = touren2.every(function (t) {
+      return bewerte(t, mCtx).maxLadung <= 10 + 1e-9;
+    });
+    pruefe("Jede Tour hält die Kapazität ein", alleKapazitaetOk);
+    var alleReihenfolgeOk = touren2.every(reihenfolgeErlaubt);
+    pruefe("In jeder Tour steht Abholung vor Lieferung", alleReihenfolgeOk);
 
     var fehler = ergebnisse.filter(function (r) { return !r.ok; });
     var box = document.createElement("div");

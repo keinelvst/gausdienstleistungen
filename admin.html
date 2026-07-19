@@ -158,20 +158,55 @@
         <div id="planer-auswahl" class="auswahl-liste"></div>
 
         <div class="planer-actions">
-          <button type="button" class="btn-primary" id="planer-berechnen">
-            <span class="btn-label">Route zusammenstellen</span>
+          <button type="button" class="btn-primary" id="planer-auto">
+            <span class="btn-label">Touren automatisch bilden</span>
             <span class="btn-spinner" hidden aria-hidden="true"></span>
           </button>
-          <button type="button" class="btn-secondary btn-small" id="planer-alle">Alle auswählen</button>
+          <button type="button" class="btn-secondary" id="planer-berechnen">
+            <span class="btn-label">Nur die Ausgewählten</span>
+            <span class="btn-spinner" hidden aria-hidden="true"></span>
+          </button>
+          <button type="button" class="btn-secondary btn-small" id="planer-alle">Alle ankreuzen</button>
           <button type="button" class="btn-secondary btn-small" id="planer-keine">Auswahl leeren</button>
         </div>
+        <p class="field-hint">„Touren automatisch bilden“ nimmt <strong>alle</strong> offenen
+           Anfragen dieser Richtung und verteilt sie selbstständig auf so wenige Touren wie
+           möglich – die Kreuzchen brauchst du dafür nicht.</p>
         <p class="form-error" id="planer-error" role="alert" hidden></p>
+      </div>
+
+      <div class="card" id="auto-card" hidden>
+        <div class="admin-bar">
+          <h2>Vorgeschlagene Touren</h2>
+          <button type="button" class="btn-secondary btn-small" id="auto-neu">Neu berechnen</button>
+        </div>
+        <p class="section-hint">
+          Nach Passgenauigkeit sortiert: Tour 1 fasst zusammen, was am besten zusammengehört.
+          Öffne eine Tour zum Anpassen und Speichern – oder schick sie direkt aufs Handy.
+        </p>
+        <div id="auto-liste" class="anfragen-liste"></div>
+      </div>
+
+      <div class="card" id="teilen-box" hidden>
+        <div class="admin-bar">
+          <h2>Tour zum Kopieren</h2>
+          <button type="button" class="btn-secondary btn-small" id="teilen-schliessen">Schließen</button>
+        </div>
+        <p class="section-hint">Alles markiert – mit <strong>Strg&nbsp;+&nbsp;C</strong> kopieren
+           und z.&nbsp;B. in WhatsApp einfügen.</p>
+        <textarea id="teilen-text" rows="14" readonly></textarea>
       </div>
 
       <div class="card" id="tour-card" hidden>
         <div class="admin-bar">
           <h2>2. Route prüfen und anpassen</h2>
           <button type="button" class="btn-secondary btn-small" id="tour-neu-optimieren">Neu optimieren</button>
+        </div>
+
+        <div class="maps-actions">
+          <button type="button" class="btn-primary btn-small" id="tour-maps">In Google Maps öffnen</button>
+          <button type="button" class="btn-secondary btn-small" id="tour-teilen">Link teilen</button>
+          <button type="button" class="btn-secondary btn-small" id="tour-whatsapp">Per WhatsApp</button>
         </div>
 
         <div id="tour-summary" class="tour-summary" role="status" aria-live="polite"></div>
