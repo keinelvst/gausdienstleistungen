@@ -1,85 +1,79 @@
-# Datenbank einrichten (ca. 10 Minuten, kostenlos)
+# Datenbank – Stand und Bedienung
 
-Damit du im Adminbereich alle Anfragen siehst, müssen sie irgendwo gespeichert
-werden. Dafür nutzen wir **Supabase** – kostenlos, kein Zahlungsmittel nötig.
+Die Datenbank ist **eingerichtet und aktiv** (19.07.2026). Anfragen von der
+Website landen automatisch darin, der Adminbereich liest sie aus.
 
-Der Adminbereich funktioniert auch **ohne** diese Einrichtung: Er läuft dann im
-Übungsmodus mit Beispieldaten auf deinem Gerät, damit du den Tourenplaner
-ausprobieren kannst. Echte Kundenanfragen kommen erst nach diesen Schritten an.
+| | |
+|---|---|
+| Anbieter | Supabase, Gratis-Plan |
+| Projekt | `gaus-dienstleistungen` |
+| Kennung | `cnshxqkuvtkenrogbjti` |
+| Serverstandort | Frankfurt (Deutschland) – wichtig für die DSGVO |
+| Dashboard | https://supabase.com/dashboard/project/cnshxqkuvtkenrogbjti |
 
----
+## Wie du dich anmeldest
 
-## Schritt 1 – Konto anlegen
+Adminbereich: https://keinelvst.github.io/gausdienstleistungen/admin.html
+(oder auf der Website ganz unten auf **„Interner Bereich"**)
 
-1. Gehe auf **https://supabase.com** und klicke oben rechts auf *Start your project*.
-2. Melde dich mit deinem GitHub-Konto an (dasselbe, mit dem die Website
-   veröffentlicht wird) – das ist am schnellsten.
+Anmeldung mit deiner E-Mail-Adresse und dem Passwort, das du im Supabase-
+Dashboard unter **Authentication → Users** für dich angelegt hast.
 
-## Schritt 2 – Projekt erstellen
+## Wer darf was
 
-1. Klicke auf **New project**.
-2. *Name*: `gaus-dienstleistungen`
-3. *Database Password*: Klicke auf **Generate a password** und **speichere das
-   Passwort in deinem Passwort-Manager**. Du brauchst es später wahrscheinlich
-   nie wieder, aber es lässt sich nicht nachschauen.
-4. *Region*: **Central EU (Frankfurt)** – wichtig, damit die Kundendaten in
-   Deutschland liegen (DSGVO).
-5. *Plan*: **Free**.
-6. **Create new project** – die Einrichtung dauert ein bis zwei Minuten.
+Der Schlüssel in der Website (`supabaseAnonKey`, beginnt mit
+`sb_publishable_`) ist von Supabase ausdrücklich dafür gemacht, öffentlich
+zu sein. Er kann **ausschließlich neue Anfragen anlegen** – nichts lesen,
+nichts ändern, nichts löschen. Geprüft am 19.07.2026:
 
-## Schritt 3 – Tabellen anlegen
+| Versuch ohne Anmeldung | Ergebnis |
+|---|---|
+| Anfragen lesen | leere Liste |
+| Anfragen ändern | 0 Zeilen betroffen |
+| Anfragen löschen | 0 Zeilen betroffen |
+| sich selbst freischalten | abgewiesen (401) |
 
-1. Links in der Leiste auf **SQL Editor** klicken.
-2. Öffne die Datei `datenbank.sql` aus deinem Projektordner mit dem Editor
-   (Rechtsklick → *Öffnen mit* → *Editor*), markiere alles (`Strg+A`) und
-   kopiere es (`Strg+C`).
-3. Füge es im SQL Editor ein (`Strg+V`) und klicke unten rechts auf **Run**.
-4. Es sollte *Success. No rows returned* erscheinen. Fertig.
+Gelesen werden darf nur von den Adressen in der Tabelle `gaus_admins`.
+Zusätzlich ist die **Selbstregistrierung abgeschaltet** – niemand kann sich
+in deinem Projekt ein Konto anlegen.
 
-## Schritt 4 – Deinen Admin-Login anlegen
+> ⚠️ Der Schlüssel `sb_secret_…` im Dashboard hebelt jeden Schutz aus.
+> Der darf **niemals** in die Website, in ein Chatfenster oder in eine E-Mail.
 
-1. Links auf **Authentication** → **Users** → Button **Add user** →
-   *Create new user*.
-2. *Email*: deine E-Mail-Adresse.
-3. *Password*: ein Passwort, das du dir merkst (mindestens 8 Zeichen).
-4. Häkchen bei **Auto Confirm User** setzen – sonst kannst du dich nicht
-   anmelden.
-5. **Create user**.
+## Eine weitere Person freischalten
 
-> Mit dieser E-Mail und diesem Passwort meldest du dich später im Adminbereich
-> an. Es ist das einzige Konto – lege dir keine weiteren an.
+Im Dashboard unter **SQL Editor** ausführen:
 
-## Schritt 5 – Die zwei Schlüssel abholen
+```sql
+insert into public.gaus_admins (email) values ('neue.adresse@example.com')
+on conflict (email) do nothing;
+```
 
-1. Links ganz unten auf **Project Settings** (Zahnrad) → **API**.
-2. Dort stehen zwei Werte, die ich brauche:
-   - **Project URL** – sieht aus wie `https://abcdefghijkl.supabase.co`
-   - **Project API keys → `anon` `public`** – ein sehr langer Text, der mit
-     `eyJ...` beginnt
+Und unter **Authentication → Users** einen Benutzer mit derselben Adresse
+anlegen (Haken bei *Auto Confirm User* setzen).
 
-**Schicke mir diese zwei Werte.** Beide sind dafür gemacht, öffentlich in einer
-Website zu stehen – sie erlauben nur das Anlegen neuer Anfragen, nicht das Lesen.
-Zum Lesen ist dein Login aus Schritt 4 nötig.
+## Tabellen
 
-> ⚠️ Der Schlüssel mit der Bezeichnung **`service_role`** darf **niemals** in die
-> Website oder zu mir. Der hebelt jeden Schutz aus. Finger weg davon.
+- `gaus_anfragen` – alle eingegangenen Anfragen samt Adressen, Maßen und Preis
+- `gaus_touren` – die im Tourenplaner gespeicherten Routen
+- `gaus_admins` – Freigabeliste für den Adminbereich
 
----
+Das komplette Skript liegt als `datenbank.sql` im Projektordner und kann
+gefahrlos erneut ausgeführt werden.
 
-## Was passiert danach
+## Pausiertes Projekt
 
-- Klickt ein Kunde auf der Website auf *Per WhatsApp anfragen*, wird die Anfrage
-  automatisch gespeichert: Adressen, Gegenstände, Maße, Gewicht, Etagen und der
-  berechnete Preis.
-- Du öffnest `https://keinelvst.github.io/gausdienstleistungen/admin.html`,
-  meldest dich an und siehst alles.
-- Der Tourenplaner stellt aus den offenen Anfragen automatisch Routen zusammen.
+Um Platz im Gratis-Plan zu schaffen, wurde das alte Projekt
+*„keinelvst@gmail.com's Project"* (die Vorstufe der Fußball-App mit
+`players`, `matches`, `sponsors`, `sponsor_inquiries`) **pausiert, nicht
+gelöscht**. Die Daten sind vollständig erhalten und **90 Tage lang** wieder
+einschaltbar; danach bleiben nur herunterladbare Sicherungskopien.
+`footylab` wurde nicht angefasst.
 
-## Wichtig: Datenschutzerklärung ist jetzt Pflicht
+## Noch offen: Datenschutzerklärung
 
-Sobald Kundenadressen gespeichert werden, brauchst du eine
-**Datenschutzerklärung** auf der Website – vorher war sie nur empfohlen, jetzt
-ist sie rechtlich verpflichtend (DSGVO Art. 13). Sie muss nennen:
+Da jetzt Kundenadressen gespeichert werden, ist eine **Datenschutzerklärung
+Pflicht** (DSGVO Art. 13). Sie muss nennen:
 
 - wer du bist (Name, Anschrift, Kontakt),
 - welche Daten gespeichert werden (Adressen, Kontaktdaten, Angaben zur Sendung),
@@ -91,5 +85,3 @@ ist sie rechtlich verpflichtend (DSGVO Art. 13). Sie muss nennen:
 - die Rechte der Kunden (Auskunft, Löschung, Widerspruch, Beschwerde).
 
 Kostenlose Generatoren: `e-recht24.de` oder `datenschutz-generator.de`.
-Schick mir den fertigen Text, dann baue ich ihn ein – zusammen mit dem noch
-fehlenden Impressum.

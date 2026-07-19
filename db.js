@@ -161,7 +161,7 @@ window.GausDB = (function () {
       demoWrite(DEMO_ANFRAGEN, rows);
       return Promise.resolve(row);
     }
-    return rest("/anfragen", {
+    return rest("/gaus_anfragen", {
       method: "POST",
       body: row,
       prefer: "return=minimal",
@@ -175,7 +175,7 @@ window.GausDB = (function () {
       rows.sort(function (a, b) { return (b.erstellt_am || "").localeCompare(a.erstellt_am || ""); });
       return Promise.resolve(rows);
     }
-    return rest("/anfragen?select=*&order=erstellt_am.desc&limit=500");
+    return rest("/gaus_anfragen?select=*&order=erstellt_am.desc&limit=500");
   }
 
   function anfrageAendern(id, patch) {
@@ -185,7 +185,7 @@ window.GausDB = (function () {
       demoWrite(DEMO_ANFRAGEN, rows);
       return Promise.resolve();
     }
-    return rest("/anfragen?id=eq." + encodeURIComponent(id),
+    return rest("/gaus_anfragen?id=eq." + encodeURIComponent(id),
                 { method: "PATCH", body: patch, prefer: "return=minimal" });
   }
 
@@ -194,7 +194,7 @@ window.GausDB = (function () {
       demoWrite(DEMO_ANFRAGEN, demoRead(DEMO_ANFRAGEN).filter(function (r) { return r.id !== id; }));
       return Promise.resolve();
     }
-    return rest("/anfragen?id=eq." + encodeURIComponent(id),
+    return rest("/gaus_anfragen?id=eq." + encodeURIComponent(id),
                 { method: "DELETE", prefer: "return=minimal" });
   }
 
@@ -204,7 +204,7 @@ window.GausDB = (function () {
       rows.sort(function (a, b) { return (b.erstellt_am || "").localeCompare(a.erstellt_am || ""); });
       return Promise.resolve(rows);
     }
-    return rest("/touren?select=*&order=erstellt_am.desc&limit=200");
+    return rest("/gaus_touren?select=*&order=erstellt_am.desc&limit=200");
   }
 
   function tourSpeichern(tour) {
@@ -224,11 +224,11 @@ window.GausDB = (function () {
       var id = tour.id;
       var patch = Object.assign({}, tour);
       delete patch.id; delete patch.erstellt_am;
-      return rest("/touren?id=eq." + encodeURIComponent(id),
+      return rest("/gaus_touren?id=eq." + encodeURIComponent(id),
                   { method: "PATCH", body: patch, prefer: "return=minimal" })
              .then(function () { return tour; });
     }
-    return rest("/touren", { method: "POST", body: tour, prefer: "return=representation" })
+    return rest("/gaus_touren", { method: "POST", body: tour, prefer: "return=representation" })
            .then(function (r) { return (r && r[0]) || tour; });
   }
 
@@ -237,7 +237,7 @@ window.GausDB = (function () {
       demoWrite(DEMO_TOUREN, demoRead(DEMO_TOUREN).filter(function (r) { return r.id !== id; }));
       return Promise.resolve();
     }
-    return rest("/touren?id=eq." + encodeURIComponent(id),
+    return rest("/gaus_touren?id=eq." + encodeURIComponent(id),
                 { method: "DELETE", prefer: "return=minimal" });
   }
 

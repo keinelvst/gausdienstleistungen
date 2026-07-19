@@ -23,14 +23,17 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      # Schlüssel aus den verschlüsselten GitHub-Secrets einsetzen.
-      # Fehlt ein Secret, bleibt der Wert leer und die Seite nutzt ihre
-      # eingebauten Ersatzwerte (geschätzte Entfernungen bzw. Übungsmodus).
+      # OpenRouteService-Key aus dem verschlüsselten GitHub-Secret einsetzen.
+      # Fehlt das Secret, bleibt der Wert leer und Entfernungen werden
+      # über die Luftlinie geschätzt.
+      #
+      # Die Supabase-Werte stehen bewusst direkt in app.js: Der
+      # "publishable key" ist von Supabase dafür vorgesehen, öffentlich in
+      # einer Website zu stehen, und wäre in der ausgelieferten Datei
+      # ohnehin sichtbar. Er erlaubt nur das Anlegen von Anfragen.
       - name: API-Schlüssel einsetzen
         run: |
           sed -i 's|orsApiKey: ""|orsApiKey: "${{ secrets.ORS_API_KEY }}"|' app.js
-          sed -i 's|supabaseUrl: ""|supabaseUrl: "${{ secrets.SUPABASE_URL }}"|' app.js
-          sed -i 's|supabaseAnonKey: ""|supabaseAnonKey: "${{ secrets.SUPABASE_ANON_KEY }}"|' app.js
 
       - uses: actions/configure-pages@v5
 

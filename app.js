@@ -105,9 +105,12 @@ var CONFIG = {
   // Beide Werte bekommst du in Supabase unter Project Settings → API.
   // Anleitung: SUPABASE-EINRICHTUNG.md. Solange sie leer sind, läuft der
   // Adminbereich im Übungsmodus (Daten nur auf dem eigenen Gerät).
-  supabaseUrl: "",               // z. B. "https://abcdefghijkl.supabase.co"
-  supabaseAnonKey: "",           // der lange "anon public"-Schlüssel (eyJ…)
-                                 // NIEMALS den "service_role"-Schlüssel hier eintragen!
+  supabaseUrl: "https://cnshxqkuvtkenrogbjti.supabase.co",
+  // "Publishable key" aus Supabase – laut Supabase ausdrücklich dafür gemacht,
+  // öffentlich in einer Website zu stehen. Er erlaubt NUR das Anlegen neuer
+  // Anfragen; Lesen geht ausschließlich mit dem Admin-Login.
+  // NIEMALS den "secret"-Schlüssel (sb_secret_…) hier eintragen!
+  supabaseAnonKey: "sb_publishable_0HhpDBH5PNqoeQ3mZDXXoA_6shdmvBB",
 
   // ── Tourenplanung (nur Adminbereich) ───────────────────────────────
   maxTourStunden: 9,             // Obergrenze reine Fahrzeit je Tour/Tag (Vorgabe Inhaber)
