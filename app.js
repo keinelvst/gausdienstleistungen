@@ -1342,9 +1342,7 @@ var CONFIG = {
       if (l.leer) return;                 // Posten ohne Kosten weglassen
       html += '<li><span class="bd-label">' + esc(l.label) + '</span></li>';
     });
-    html += '</ul>' +
-            '<p class="bd-total-spanne"><span>Ihr Preisrahmen</span>' +
-            '<strong>' + esc(total) + '</strong></p>';
+    html += '</ul>';
     return html;
   }
 
@@ -1744,9 +1742,9 @@ var CONFIG = {
           }
           badges = badges.concat([
             { text: result.volumeShare >= 1
-                ? "Ladung: " + fmtNum(result.volumeM3, 2) + " m³ – voller Fahrtpreis"
-                : "Ladung: " + fmtNum(result.volumeM3, 2) + " m³ (voller Fahrtpreis ab " +
-                  fmtNum(CONFIG.vollpreisAbM3, 1) + " m³)" }
+                ? "Ladung " + fmtNum(result.volumeM3, 2) + " m³ – voller Fahrtpreis"
+                : "Ladung " + fmtNum(result.volumeM3, 2) + " von " +
+                  fmtNum(CONFIG.vollpreisAbM3, 1) + " m³" }
           ]);
           badges.push(fuel.isFallback
             ? { text: "Diesel: Standardwert " + fmtNum(fuel.price, 2) + " €/l", warn: true }
@@ -1755,7 +1753,8 @@ var CONFIG = {
 
           var wa = transportWaMessage(data, result, { estimated: estimated }, richtung);
           showResult(resultEl,
-            '<h3 class="result-title">Ihr Preis: ' + esc(spanneText(result.total)) + '</h3>' +
+            '<p class="result-kicker">Ihr Preisrahmen</p>' +
+            '<h3 class="result-title">' + esc(spanneText(result.total)) + '</h3>' +
             '<p class="result-sub">Beiladung ' + esc(pickup.label) + ' → ' + esc(delivery.label) + '</p>' +
             badgesHtml(badges) +
             breakdownHtml(lines, spanneText(result.total)) +
@@ -1907,7 +1906,8 @@ var CONFIG = {
             }
           });
           showResult(resultEl,
-            '<h3 class="result-title">Ihr Preis: ' + esc(spanneText(result.total)) + '</h3>' +
+            '<p class="result-kicker">Ihr Preisrahmen</p>' +
+            '<h3 class="result-title">' + esc(spanneText(result.total)) + '</h3>' +
             '<p class="result-sub">Sonderfahrt ' + esc(pickup.label) + ' → ' + esc(dest.label) + '</p>' +
             badgesHtml(badges) +
             breakdownHtml(lines, spanneText(result.total)) +
@@ -2054,7 +2054,8 @@ var CONFIG = {
 
         var wa = cleaningWaMessage(data, result, false);
         showResult(resultEl,
-          '<h3 class="result-title">Ihr Preis: ' + esc(spanneText(result.total)) + '</h3>' +
+          '<p class="result-kicker">Ihr Preisrahmen</p>' +
+            '<h3 class="result-title">' + esc(spanneText(result.total)) + '</h3>' +
           '<p class="result-sub">' + esc(data.service) + ' – ' + esc(place.label) + '</p>' +
           badgesHtml(badges) +
           breakdownHtml(lines, spanneText(result.total)) +

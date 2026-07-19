@@ -59,47 +59,71 @@ body {
 /* ── Header ─────────────────────────────────────────── */
 
 .site-header {
-  background: linear-gradient(160deg, var(--blue-900), var(--blue-700));
+  background:
+    radial-gradient(120% 140% at 100% 0%, rgba(245, 166, 35, .18), transparent 55%),
+    linear-gradient(160deg, var(--blue-900), var(--blue-700));
   color: #fff;
-  padding: 28px 0 24px;
+  padding: 16px 0 18px;
+}
+
+/* Marke links, Telefon rechts – spart eine ganze Zeile */
+.site-header .wrap {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px 16px;
 }
 
 .brand {
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: 11px;
+  flex: 1 1 auto;
 }
 
 .brand-logo {
   display: grid;
   place-items: center;
-  width: 46px;
-  height: 46px;
-  border-radius: 10px;
+  width: 40px;
+  height: 40px;
+  border-radius: 11px;
   background: var(--amber);
   color: var(--blue-900);
-  font-size: 26px;
+  font-size: 23px;
   font-weight: 800;
   flex: none;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, .18);
 }
 
 .brand-name {
   margin: 0;
-  font-size: 20px;
+  font-size: 19px;
   font-weight: 700;
   letter-spacing: 0.2px;
+  line-height: 1.2;
 }
 
 .brand-tag {
   margin: 0;
-  font-size: 13px;
-  opacity: 0.85;
+  font-size: 12.5px;
+  opacity: 0.82;
+}
+
+/* Telefon sitzt rechts neben der Marke, der Werbesatz darunter über
+   die volle Breite – spart gegenüber drei Zeilen untereinander Platz. */
+.header-kontakt {
+  margin: 0;
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 10px;
 }
 
 .hero-line {
-  margin: 18px 0 0;
-  font-size: 15px;
-  opacity: 0.92;
+  margin: 0;
+  flex: 1 0 100%;
+  font-size: 13.5px;
+  opacity: 0.85;
 }
 
 /* ── Tab-Navigation ─────────────────────────────────── */
@@ -113,38 +137,42 @@ body {
   box-shadow: 0 2px 6px rgba(20, 50, 79, 0.06);
 }
 
+/* Auf dem Handy umbrechen statt seitlich scrollen – sonst liegt der
+   vierte Reiter ausserhalb des Bildes und wird schlicht übersehen. */
 .tabs-row {
   display: flex;
+  flex-wrap: wrap;
   gap: 4px;
-  overflow-x: auto;
-  -webkit-overflow-scrolling: touch;
 }
+
+.tabs-row { padding-top: 7px; padding-bottom: 7px; }
 
 .tab {
   appearance: none;
   border: none;
   background: none;
   font: inherit;
-  font-size: 14.5px;
+  font-size: 14px;
   font-weight: 600;
   color: var(--ink-soft);
-  padding: 14px 12px 11px;
-  border-bottom: 3px solid transparent;
+  padding: 8px 12px;
+  border-radius: 999px;
   cursor: pointer;
   white-space: nowrap;
-  flex: 1;
+  flex: 1 1 calc(50% - 4px);   /* zwei je Zeile auf schmalen Bildschirmen */
+  transition: background .15s, color .15s;
 }
 
-.tab:hover { color: var(--blue-700); }
+.tab:hover { color: var(--blue-700); background: var(--blue-100); }
 
 .tab.is-active {
-  color: var(--blue-700);
-  border-bottom-color: var(--amber);
+  color: #fff;
+  background: var(--blue-700);
 }
 
 /* ── Panels & Cards ─────────────────────────────────── */
 
-main.wrap { padding-top: 20px; padding-bottom: 40px; }
+main.wrap { padding-top: 14px; padding-bottom: 32px; }
 
 .panel { display: none; }
 .panel.is-active { display: block; }
@@ -153,41 +181,59 @@ main.wrap { padding-top: 20px; padding-bottom: 40px; }
   background: var(--card);
   border-radius: var(--radius);
   box-shadow: var(--shadow);
-  padding: 20px 18px;
-  margin-bottom: 18px;
+  padding: 16px 16px;
+  margin-bottom: 12px;
+}
+
+/* Einleitung als schlanker Streifen statt als große Karte */
+.intro-card {
+  padding: 14px 16px;
+  border-left: 4px solid var(--amber);
 }
 
 .intro-card h1 {
-  margin: 0 0 8px;
-  font-size: 24px;
+  margin: 0 0 4px;
+  font-size: 19px;
   line-height: 1.25;
   color: var(--blue-900);
 }
 
-.intro-card p { margin: 0; color: var(--ink-soft); }
+.intro-card p { margin: 0; color: var(--ink-soft); font-size: 14px; }
 .intro-card strong { color: var(--ink); }
 
 /* ── Formulare ──────────────────────────────────────── */
 
 form h2 {
-  font-size: 16px;
-  color: var(--blue-900);
-  margin: 22px 0 10px;
-  padding-bottom: 6px;
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: .05em;
+  text-transform: uppercase;
+  color: var(--blue-600);
+  margin: 18px 0 9px;
+  padding-bottom: 5px;
   border-bottom: 1px solid var(--line);
 }
 
-form h2:first-of-type { margin-top: 2px; }
+form h2:first-of-type { margin-top: 0; }
 
-.h2-note { font-weight: 400; font-size: 13px; color: var(--ink-soft); }
-
-.section-hint {
-  margin: -4px 0 10px;
-  font-size: 13.5px;
+.h2-note {
+  font-weight: 400;
+  font-size: 12px;
+  letter-spacing: 0;
+  text-transform: none;
   color: var(--ink-soft);
 }
 
-.field { margin-bottom: 14px; min-width: 0; }
+.section-hint {
+  margin: -3px 0 9px;
+  font-size: 13px;
+  color: var(--ink-soft);
+}
+
+.field { margin-bottom: 11px; min-width: 0; }
 
 .field-row {
   display: grid;
@@ -198,9 +244,9 @@ form h2:first-of-type { margin-top: 2px; }
 
 label, .label-like {
   display: block;
-  font-size: 14px;
+  font-size: 13.5px;
   font-weight: 600;
-  margin-bottom: 5px;
+  margin-bottom: 4px;
 }
 
 .req { color: var(--error); }
@@ -216,14 +262,16 @@ textarea {
   font: inherit;
   font-size: 16px; /* verhindert iOS-Zoom */
   color: var(--ink);
-  background: #fff;
+  background: #f7f9fc;
   border: 1px solid var(--line);
-  border-radius: 8px;
-  padding: 10px 12px;
+  border-radius: 9px;
+  padding: 9px 11px;
   outline: none;
+  transition: background .12s, border-color .12s, box-shadow .12s;
 }
 
 input:focus, select:focus, textarea:focus {
+  background: #fff;
   border-color: var(--blue-600);
   box-shadow: 0 0 0 3px rgba(37, 99, 168, 0.15);
 }
@@ -255,38 +303,55 @@ textarea { resize: vertical; }
 
 /* Checkboxen & Radios */
 
+/* Ankreuz- und Auswahlfelder als ganze anklickbare Zeile:
+   ruhiger im Bild und am Handy deutlich leichter zu treffen. */
 .check {
   display: flex;
-  align-items: flex-start;
-  gap: 9px;
+  align-items: center;
+  gap: 10px;
   font-weight: 400;
-  font-size: 14.5px;
+  font-size: 14px;
+  line-height: 1.35;
   cursor: pointer;
   margin-bottom: 0;
+  padding: 9px 11px;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  background: #f7f9fc;
+  transition: background .12s, border-color .12s;
+}
+
+.check:hover { background: var(--blue-100); border-color: #c3d6e8; }
+
+.check:has(input:checked) {
+  background: var(--blue-100);
+  border-color: var(--blue-600);
+  font-weight: 600;
 }
 
 .check input {
-  margin: 3px 0 0;
-  width: 17px;
-  height: 17px;
+  margin: 0;
+  width: 18px;
+  height: 18px;
   flex: none;
   accent-color: var(--blue-600);
 }
 
 .check em { font-style: normal; font-weight: 600; }
 
-.radio-row { display: grid; gap: 8px; }
+.radio-row { display: grid; gap: 7px; }
 
-.field-check { align-self: end; padding-bottom: 8px; }
+/* "Aufzug"-Kästchen sitzt neben dem Etagenfeld auf gleicher Höhe */
+.field-check { align-self: end; padding-bottom: 0; margin-bottom: 11px; }
 
 /* ── Gegenstände (dynamische Zeilen) ────────────────── */
 
-.items { display: grid; gap: 10px; margin-bottom: 12px; }
+.items { display: grid; gap: 8px; margin-bottom: 10px; }
 
 .item-row {
   border: 1px solid var(--line);
   border-radius: 10px;
-  padding: 12px;
+  padding: 10px 11px 11px;
   background: #fbfcfe;
 }
 
@@ -294,7 +359,7 @@ textarea { resize: vertical; }
   display: flex;
   justify-content: space-between;
   align-items: center;
-  margin-bottom: 8px;
+  margin-bottom: 6px;
 }
 
 .item-title { font-size: 13.5px; font-weight: 700; color: var(--blue-700); }
@@ -370,18 +435,58 @@ textarea { resize: vertical; }
 
 /* ── Ergebnis-Karte ─────────────────────────────────── */
 
-.result-card { border-top: 4px solid var(--amber); }
+/* Ergebniskarte: Der Preisrahmen ist das Wichtigste auf der Seite und
+   bekommt deshalb einen eigenen, farbigen Kopf. */
+.result-card { padding: 0; overflow: hidden; }
+
+.result-kicker {
+  margin: 0;
+  padding: 15px 16px 0;
+  background: linear-gradient(160deg, var(--blue-900), var(--blue-900));
+  color: rgba(255, 255, 255, .72);
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+}
 
 .result-title {
-  margin: 0 0 4px;
-  font-size: 18px;
+  margin: 0;
+  padding: 2px 16px 16px;
+  background: linear-gradient(200deg, var(--blue-900), var(--blue-700));
+  color: #fff;
+  font-size: 30px;
+  font-weight: 800;
+  letter-spacing: -.02em;
+  line-height: 1.1;
+  white-space: nowrap;
+}
+
+/* Bei "Bitte individuell anfragen" gibt es keinen Preis – dort passt
+   der normale Fließtext besser als eine große Zahl. Ohne Kicker davor
+   braucht die Überschrift wieder ihren eigenen Abstand nach oben. */
+.result-card.result-error .result-title { white-space: normal; }
+.result-title:first-child { padding-top: 18px; }
+
+.result-sub {
+  margin: 0;
+  padding: 9px 16px 12px;
+  background: var(--blue-100);
+  font-size: 13px;
   color: var(--blue-900);
 }
 
-.result-sub {
-  margin: 0 0 14px;
-  font-size: 13.5px;
-  color: var(--ink-soft);
+/* Alles ausser Kopf und Untertitel bekommt den normalen Kartenrand */
+.result-card > *:not(.result-title):not(.result-sub):not(.result-kicker) {
+  margin-left: 16px;
+  margin-right: 16px;
+}
+.result-card > *:last-child { margin-bottom: 16px; }
+.result-card .badges { margin-top: 14px; }
+
+.result-card.result-error .result-title {
+  background: linear-gradient(160deg, #8c2f22, var(--error));
+  font-size: 20px;
 }
 
 .breakdown {
@@ -586,8 +691,7 @@ textarea { resize: vertical; }
 .footer-tel { font-weight: 700; white-space: nowrap; }
 .header-tel {
   display: inline-block;
-  margin-top: 10px;
-  padding: 8px 16px;
+  padding: 7px 15px;
   border-radius: 999px;
   background: rgba(255, 255, 255, .16);
   border: 1px solid rgba(255, 255, 255, .4);
@@ -597,15 +701,9 @@ textarea { resize: vertical; }
   white-space: nowrap;
 }
 .header-tel:hover { background: rgba(255, 255, 255, .26); }
-.hero-sub {
-  display: block;
-  margin-top: 8px;
-  font-size: 13.5px;
-  opacity: .85;
-}
-@media (min-width: 560px) {
-  .hero-sub { display: inline; margin-left: 12px; margin-top: 0; }
-}
+.hero-sub { font-size: 12.5px; opacity: .8; }
+/* Auf schmalen Handys reicht der Platz nur für die Nummer selbst */
+@media (max-width: 479px) { .hero-sub { display: none; } }
 
 /* Lange Wörter und URLs dürfen umbrechen, statt die Seite breit zu machen */
 .brand-tag, .textseite p, .textseite li, .textseite a {
@@ -640,11 +738,25 @@ textarea { resize: vertical; }
 /* ── Desktop-Feinschliff ────────────────────────────── */
 
 @media (min-width: 700px) {
-  .site-header { padding: 40px 0 32px; }
-  .intro-card h1 { font-size: 28px; }
-  .card { padding: 26px 26px; }
+  .wrap { max-width: 720px; }
+  .site-header { padding: 18px 0 20px; }
+  .intro-card h1 { font-size: 21px; }
+  .card { padding: 20px 22px; }
+  .intro-card { padding: 16px 22px; }
   .item-grid { grid-template-columns: repeat(5, 1fr); }
-  .tab { flex: none; padding: 15px 18px 12px; }
+  .tab { flex: 0 1 auto; padding: 8px 16px; }
+
+  /* Wunschtermin, Name und Telefon nebeneinander statt untereinander */
+  .field-row-3 { grid-template-columns: repeat(3, 1fr); }
+
+  .result-kicker { padding: 18px 22px 0; }
+  .result-title { padding: 2px 22px 20px; font-size: 36px; }
+  .result-sub { padding: 10px 22px 13px; }
+  .result-card > *:not(.result-title):not(.result-sub):not(.result-kicker) {
+    margin-left: 22px;
+    margin-right: 22px;
+  }
+  .result-card > *:last-child { margin-bottom: 20px; }
 }
 
 @media (max-width: 480px) {
