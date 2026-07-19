@@ -25,6 +25,13 @@
 
 * { box-sizing: border-box; }
 
+/* Muss ganz oben stehen und "!important" tragen: Das hidden-Attribut wirkt
+   über die eingebaute Browser-Regel [hidden] { display: none }, und die wird
+   von JEDER eigenen display-Angabe überstimmt (z. B. .login-screen mit
+   display:flex). Ohne diese Zeile lassen sich solche Elemente per
+   element.hidden = true nicht mehr ausblenden. */
+[hidden] { display: none !important; }
+
 html { scroll-behavior: smooth; }
 
 body {
