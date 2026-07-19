@@ -398,7 +398,12 @@ var CONFIG = {
     // deshalb nur die Ladezeit der Stopps, an denen er wirklich anpackt.
     // Die Fahrzeit zählt weiter anteilig: Er sitzt die ganze Tour mit im
     // Auto, unterwegs aussteigen lassen geht nicht.
-    var traegerStopps = (input.traegerAbholung ? 1 : 0) + (input.traegerLieferung ? 1 : 0);
+    // Ältere Anfragen (und Aufrufe von außen) kennen nur "helperNeeded"
+    // ohne Angabe wo – dann gilt der Träger an beiden Adressen.
+    var hatWoAngabe = (input.traegerAbholung !== undefined || input.traegerLieferung !== undefined);
+    var trAb   = hatWoAngabe ? !!input.traegerAbholung  : !!input.helperNeeded;
+    var trLief = hatWoAngabe ? !!input.traegerLieferung : !!input.helperNeeded;
+    var traegerStopps = (trAb ? 1 : 0) + (trLief ? 1 : 0);
     var helperSelfCost = (traegerStopps > 0 && !input.customerHelps)
       ? (CONFIG.ladezeitProStoppMin / 60) * traegerStopps * CONFIG.beifahrerStundensatzEur +
         hours * CONFIG.beifahrerStundensatzEur * share
@@ -426,6 +431,8 @@ var CONFIG = {
       mitfahrtKm: mitfahrtKm,
       blockierteKm: blockierteKm,
       traegerStopps: traegerStopps,
+      traegerAbholung: trAb,
+      traegerLieferung: trLief,
       // Kundensicht: Zeilen inkl. anteiligem Gewinnaufschlag
       fahrtCost: applyMargin(vehicleCost + driverDriveCost),
       platzCost: applyMargin(platzCost),
@@ -821,9 +828,21 @@ var CONFIG = {
     if (window.console && console.table) console.table(results);
     var banner = document.createElement("div");
     banner.className = "test-banner " + (failed.length ? "fail" : "pass");
-    banner.textContent = failed.length
-      ? "Selbsttests: " + failed.length + " von " + results.length + " FEHLGESCHLAGEN – Details in der Konsole"
-      : "Selbsttests: " + results.length + "/" + results.length + " bestanden ✓";
+    if (!failed.length) {
+      banner.textContent = "Selbsttests: " + results.length + "/" + results.length + " bestanden ✓";
+    } else {
+      // Die fehlgeschlagenen Tests direkt hier auflisten – ein Verweis auf
+      // die Konsole hilft nicht, wenn man nur den Bildschirm sieht.
+      banner.textContent = "Selbsttests: " + failed.length + " von " + results.length +
+                           " FEHLGESCHLAGEN";
+      var liste = document.createElement("ul");
+      failed.forEach(function (r) {
+        var li = document.createElement("li");
+        li.textContent = r.Test + " — erwartet: " + r.Erwartet + ", erhalten: " + r.Erhalten;
+        liste.appendChild(li);
+      });
+      banner.appendChild(liste);
+    }
     document.body.appendChild(banner);
   }
 
@@ -1571,7 +1590,7 @@ var CONFIG = {
               amount: fmtEur(result.heavyCost) },
             { label: "Beifahrer / zweiter Träger" +
                      (result.traegerStopps === 1
-                       ? " (nur " + (data.traegerAbholung ? "beim Abholen" : "beim Liefern") + ")"
+                       ? " (nur " + (result.traegerAbholung ? "beim Abholen" : "beim Liefern") + ")"
                        : ""),
               amount: fmtEur(result.helperCost) }
           ]);
