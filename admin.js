@@ -322,16 +322,16 @@
   // einen Transporter passt, damit die Aufteilung sichtbar wird.
   var BEISPIELE = [
     // ── Stuttgart → Berlin ───────────────────────────────────────────
-    { b: "beiladung_hin", n: "Familie Weber", t: "+4917010000001", v: 2.4, g: 180, p: 412,
+    { b: "beiladung_hin", n: "Familie Weber", h: true, t: "+4917010000001", v: 2.4, g: 180, p: 412,
       a: ["Bahnhofstraße 4, 73728 Esslingen", 48.7404, 9.3068, 3, false],
       l: ["Kastanienallee 12, 10435 Berlin", 52.5385, 13.4244, 0, false] },
     { b: "beiladung_hin", n: "Herr Novak", t: "+4917010000002", v: 1.2, g: 95, p: 268,
       a: ["Hauptstraße 20, 71032 Böblingen", 48.6856, 9.0116, 0, false],
       l: ["Karl-Marx-Straße 90, 12043 Berlin", 52.4750, 13.4410, 4, true] },
-    { b: "beiladung_hin", n: "Frau Aydin", t: "+4917010000003", v: 3.6, g: 290, p: 530,
+    { b: "beiladung_hin", n: "Frau Aydin", h: true, t: "+4917010000003", v: 3.6, g: 290, p: 530,
       a: ["Wilhelmstraße 8, 70182 Stuttgart", 48.7758, 9.1829, 1, false],
       l: ["Frankfurter Allee 40, 10247 Berlin", 52.5150, 13.4540, 2, false] },
-    { b: "beiladung_hin", n: "Bau Meier GmbH", t: "+4917010000004", v: 5.1, g: 470, p: 690,
+    { b: "beiladung_hin", n: "Bau Meier GmbH", h: true, t: "+4917010000004", v: 5.1, g: 470, p: 690,
       a: ["Gewerbestraße 15, 71063 Sindelfingen", 48.7106, 9.0027, 0, false],
       l: ["Chausseestraße 5, 10115 Berlin", 52.5200, 13.4050, 0, false] },
     { b: "beiladung_hin", n: "Frau Klein", t: "+4917010000005", v: 1.8, g: 140, p: 320,
@@ -350,7 +350,7 @@
       l: ["Müllerstraße 40, 13353 Berlin", 52.5500, 13.3600, 0, false] },
 
     // ── Berlin → Stuttgart (Rückweg) ─────────────────────────────────
-    { b: "beiladung_rueck", n: "Herr Baumann", t: "+4917010000009", v: 2.2, g: 170, p: 395,
+    { b: "beiladung_rueck", n: "Herr Baumann", h: true, t: "+4917010000009", v: 2.2, g: 170, p: 395,
       a: ["Kantstraße 50, 10625 Berlin", 52.5165, 13.3040, 3, false],
       l: ["Hauptstraße 22, 70563 Stuttgart", 48.7250, 9.1120, 0, false] },
     { b: "beiladung_rueck", n: "Frau Lorenz", t: "+4917010000010", v: 1.5, g: 120, p: 305,
@@ -361,7 +361,7 @@
       l: ["Hauptmarkt 6, 90403 Nürnberg", 49.4539, 11.0775, 0, false] },
 
     // ── Sonderfahrten (Raum Stuttgart) ───────────────────────────────
-    { b: "sonderfahrt", n: "Herr Dreher", t: "+4917010000012", v: 1.6, g: 220, p: 240,
+    { b: "sonderfahrt", n: "Herr Dreher", h: true, t: "+4917010000012", v: 1.6, g: 220, p: 240,
       a: ["Marktplatz 1, 70173 Stuttgart", 48.7758, 9.1829, 0, false],
       l: ["Am Markt 5, 72070 Tübingen", 48.5216, 9.0576, 1, false],
       d: { ladung: "Klavier, sehr vorsichtig", uhrzeit: "09:00" } },
@@ -372,7 +372,8 @@
   ];
 
   function beispielDatensatz(x) {
-    var daten = { beispiel: true, gegenstaende: [] };
+    var daten = { beispiel: true, gegenstaende: [],
+                  traegerGewuenscht: !!x.h, kundeHilftMit: false };
     for (var k in (x.d || {})) daten[k] = x.d[k];
     if (x.b === "beiladung_rueck") daten.richtung = "rueck";
     else if (x.b === "beiladung_hin") daten.richtung = "hin";
@@ -532,7 +533,21 @@
     var pauseSek = pausen * window.CONFIG.pauseMinuten * 60;
 
     var gesamt = fahrSek + dienstSek + pauseSek;
+
+    // Beifahrer: Er sitzt die ganze Tour mit im Auto – unterwegs aussteigen
+    // lassen geht nicht. Die Kosten fallen also einmal für die gesamte Tour
+    // an, ganz gleich für wie viele Aufträge er gebraucht wird.
+    var braucher = {};
+    reihenfolge.forEach(function (s) {
+      if (s.beifahrer && s.anfrageId) braucher[s.anfrageId] = true;
+    });
+    var beifahrerAuftraege = Object.keys(braucher).length;
+    var beifahrerKosten = beifahrerAuftraege
+      ? (gesamt / 3600) * window.CONFIG.beifahrerStundensatzEur : 0;
+
     return {
+      beifahrerAuftraege: beifahrerAuftraege,
+      beifahrerKosten: beifahrerKosten,
       fahrSek: fahrSek, dienstSek: dienstSek, pauseSek: pauseSek, pausen: pausen,
       gesamtSek: gesamt, km: km, maxLadung: maxLadung, etappen: etappen,
       kapazitaetOk: kapazitaetOk,
@@ -553,8 +568,17 @@
     var reihenfolge = [];
     var nichtEingeplant = [];
 
-    // Große Sendungen zuerst – sie sind am schwersten unterzubringen.
+    // Reihenfolge der Einplanung:
+    // 1. Aufträge MIT Beifahrer zuerst – so landen sie gemeinsam in der
+    //    ersten Tour und teilen sich dessen Kosten. Sonst verteilen sie
+    //    sich über alle Touren und der Beifahrer müsste mehrfach mit,
+    //    unter Umständen wegen einer einzigen Sendung.
+    // 2. Innerhalb davon die großen zuerst, sie sind am schwersten
+    //    unterzubringen.
     var sortiert = sendungen.slice().sort(function (a, b) {
+      var ba = a.abholung.beifahrer ? 1 : 0;
+      var bb = b.abholung.beifahrer ? 1 : 0;
+      if (ba !== bb) return bb - ba;
       return (b.abholung.volumen || 0) - (a.abholung.volumen || 0);
     });
 
@@ -706,13 +730,18 @@
       var pi = punkte.push({ lat: a.abhol_lat, lon: a.abhol_lon }) - 1;
       var li = punkte.push({ lat: a.liefer_lat, lon: a.liefer_lon }) - 1;
       var vol = Number(a.volumen_m3) || 0;
+      // Beifahrer nötig, wenn der Kunde einen Träger will und NICHT selbst mithilft
+      var d = a.daten || {};
+      var braucht = !!(d.traegerGewuenscht && !d.kundeHilftMit);
       return {
         preis: Number(a.preis_eur) || 0,
+        beifahrer: braucht,
         abholung: {
           art: "abholung", paar: n, pIdx: pi, anfrageId: a.id,
           label: a.abhol_label, lat: a.abhol_lat, lon: a.abhol_lon,
           etage: a.abhol_etage, aufzug: a.abhol_aufzug,
           name: a.name, telefon: a.telefon, volumen: vol, preis: Number(a.preis_eur) || 0,
+          beifahrer: braucht,
           dauerMin: ladezeitMin() + etagenMin(a.abhol_etage, a.abhol_aufzug)
         },
         lieferung: {
@@ -720,6 +749,7 @@
           label: a.liefer_label, lat: a.liefer_lat, lon: a.liefer_lon,
           etage: a.liefer_etage, aufzug: a.liefer_aufzug,
           name: a.name, telefon: a.telefon, volumen: vol, preis: Number(a.preis_eur) || 0,
+          beifahrer: braucht,
           dauerMin: ladezeitMin() + etagenMin(a.liefer_etage, a.liefer_aufzug)
         }
       };
@@ -898,7 +928,17 @@
             '<span><strong>' + stunden(b.gesamtSek) + '</strong> gesamt</span>' +
             '<span><strong>' + fmtNum(b.maxLadung, 2) + ' m³</strong> von ' +
               fmtNum(window.CONFIG.vanVolumeM3, 1) + ' m³</span>' +
+            (b.beifahrerAuftraege
+              ? '<span class="' + (b.beifahrerAuftraege === 1 ? "vz-warn" : "") + '">' +
+                '<strong>Beifahrer</strong> für ' + b.beifahrerAuftraege +
+                (b.beifahrerAuftraege === 1 ? " Auftrag" : " Aufträge") +
+                ' · ' + fmtEur0(b.beifahrerKosten) + '</span>'
+              : '<span><strong>ohne</strong> Beifahrer</span>') +
           '</div>' +
+          (b.beifahrerAuftraege === 1
+            ? '<p class="tour-warnung">Der Beifahrer würde hier nur wegen eines einzigen ' +
+              'Auftrags mitfahren und kostet trotzdem ' + fmtEur0(b.beifahrerKosten) + '.</p>'
+            : "") +
           '<div class="ak-aktionen">' +
             '<button type="button" class="btn-secondary btn-small" data-oeffnen="' + (v.nummer - 1) +
               '">Öffnen und bearbeiten</button>' +
@@ -977,12 +1017,17 @@
     var b = bewerte(tour.stopps, tour.ctx);
     zeilen.push(fmtKm(b.km) + " · " + stunden(b.fahrSek) + " Fahrzeit · " +
                 stunden(b.gesamtSek) + " gesamt");
+    zeilen.push(b.beifahrerAuftraege
+      ? "Beifahrer mitnehmen – nötig für " + b.beifahrerAuftraege +
+        (b.beifahrerAuftraege === 1 ? " Auftrag" : " Aufträge")
+      : "Kein Beifahrer nötig");
     zeilen.push("──────────────");
     punkte.forEach(function (s, i) {
       var nr = (s.art === "start") ? "Start" : (s.art === "ziel") ? "Ende" : String(i);
       zeilen.push(nr + ". " + (ART_NAME[s.art] || s.art) +
                   (s.name ? " " + s.name : "") +
-                  (s.preis > 0 ? " – " + fmtEur0(s.preis) : "") + ": " + (s.label || "") +
+                  (s.preis > 0 ? " – " + fmtEur0(s.preis) : "") +
+                  (s.beifahrer ? " [Träger nötig]" : "") + ": " + (s.label || "") +
                   (s.telefon ? " (" + s.telefon + ")" : ""));
     });
     zeilen.push("──────────────");
@@ -1050,13 +1095,28 @@
         '<span class="ts-label">Gesamtdauer inkl. Laden + Pause</span></div>' +
       '<div class="ts-kachel' + (b.maxLadung > window.CONFIG.vanVolumeM3 ? " ts-warn" : "") + '">' +
         '<span class="ts-wert">' + fmtNum(b.maxLadung, 2) + ' m³</span>' +
-        '<span class="ts-label">max. Auslastung von ' + fmtNum(window.CONFIG.vanVolumeM3, 1) + ' m³</span></div>';
+        '<span class="ts-label">max. Auslastung von ' + fmtNum(window.CONFIG.vanVolumeM3, 1) + ' m³</span></div>' +
+      (b.beifahrerAuftraege
+        ? '<div class="ts-kachel' + (b.beifahrerAuftraege === 1 ? " ts-warn" : "") + '">' +
+          '<span class="ts-wert">' + fmtEur0(b.beifahrerKosten) + '</span>' +
+          '<span class="ts-label">Beifahrer für ' + b.beifahrerAuftraege +
+          (b.beifahrerAuftraege === 1 ? " Auftrag" : " Aufträge") + '</span></div>'
+        : '<div class="ts-kachel"><span class="ts-wert">–</span>' +
+          '<span class="ts-label">kein Beifahrer nötig</span></div>');
 
     // ── Warnungen ──
     var warn = [];
     if (b.fahrSek > maxStd * 3600) {
       warn.push("Die Fahrzeit liegt mit " + stunden(b.fahrSek) + " über den eingestellten " +
                 fmtNum(maxStd, 1) + " Stunden. Stopp entfernen oder auf zwei Tage aufteilen.");
+    }
+    if (b.beifahrerAuftraege === 1) {
+      var einzelner = "";
+      t.stopps.forEach(function (s) { if (s.beifahrer && s.name) einzelner = s.name; });
+      warn.push("Der Beifahrer fährt nur wegen eines einzigen Auftrags mit" +
+                (einzelner ? " (" + einzelner + ")" : "") + " und kostet trotzdem die volle Tour: " +
+                fmtEur0(b.beifahrerKosten) + ". Besser diesen Auftrag in eine Tour legen, in der " +
+                "ohnehin getragen wird – oder beim Kunden nachfragen, ob er selbst mit anpackt.");
     }
     if (!t.stopps.length) {
       warn.push("Es passt keine einzige Anfrage in diese Tour. Meist ist die Höchstfahrzeit zu " +
@@ -1134,6 +1194,7 @@
     if (s.etage !== null && s.etage !== undefined && s.art !== "start" && s.art !== "ziel") {
       details.push(s.etage === 0 ? "Erdgeschoss" : s.etage + ". Etage" + (s.aufzug ? " (Aufzug)" : " ohne Aufzug"));
     }
+    if (s.beifahrer) details.push('<span class="st-traeger">Träger nötig</span>');
     if (s.volumen) details.push(fmtNum(s.volumen, 2) + " m³");
     if (s.dauerMin) details.push("ca. " + Math.round(s.dauerMin) + " Min. vor Ort");
     if (s.telefon) details.push('<a href="tel:' + esc(s.telefon) + '">' + esc(s.telefon) + "</a>");
@@ -1295,7 +1356,8 @@
                       etage: s.etage === undefined ? null : s.etage,
                       aufzug: !!s.aufzug, name: s.name || null, telefon: s.telefon || null,
                       volumen: s.volumen || 0, dauerMin: s.dauerMin || 0,
-                      preis: s.preis || 0, anfrageId: s.anfrageId || null
+                      preis: s.preis || 0, beifahrer: !!s.beifahrer,
+                      anfrageId: s.anfrageId || null
                     };
                   })
       };
@@ -1571,6 +1633,52 @@
     pruefe("Jede Tour hält die Kapazität ein", alleKapazitaetOk);
     var alleReihenfolgeOk = touren2.every(reihenfolgeErlaubt);
     pruefe("In jeder Tour steht Abholung vor Lieferung", alleReihenfolgeOk);
+
+    // ── Beifahrer bündeln ──
+    // Vier Sendungen à 4 m³, davon zwei mit Trägerbedarf. Bei 10 m³
+    // passen nur zwei je Tour – die beiden Trägeraufträge müssen
+    // zusammen in EINE Tour, damit der Beifahrer nicht zweimal mitfährt.
+    var bPunkte = [{ lat: 48.74, lon: 9.13 }];
+    var bSendungen = [];
+    [false, true, false, true].forEach(function (brauchtTraeger, bi) {
+      var ap = bPunkte.push({ lat: 48.7 + bi / 50, lon: 9.1 }) - 1;
+      var lp = bPunkte.push({ lat: 52.5 + bi / 50, lon: 13.4 }) - 1;
+      bSendungen.push({
+        preis: 100, beifahrer: brauchtTraeger,
+        abholung:  { art: "abholung",  paar: bi, pIdx: ap, volumen: 4, dauerMin: 0,
+                     beifahrer: brauchtTraeger, anfrageId: "a" + bi },
+        lieferung: { art: "lieferung", paar: bi, pIdx: lp, volumen: 4, dauerMin: 0,
+                     beifahrer: brauchtTraeger, anfrageId: "a" + bi }
+      });
+    });
+    var bCtx = {
+      matrix: luftlinienMatrix(bPunkte), startIdx: 0, zielIdx: null,
+      kapazitaet: 10, maxSek: 12 * 3600
+    };
+    var bOffen = bSendungen.slice();
+    var bTouren = [];
+    while (bOffen.length && bTouren.length < 12) {
+      var bl = planeRoute(bOffen, bCtx);
+      if (!bl.reihenfolge.length) break;
+      var bDrin = {};
+      bl.reihenfolge.forEach(function (s) { bDrin[s.paar] = true; });
+      bTouren.push(bl.reihenfolge);
+      bOffen = bOffen.filter(function (s) { return !bDrin[s.abholung.paar]; });
+    }
+    var mitBeifahrer = bTouren.filter(function (t) {
+      return bewerte(t, bCtx).beifahrerAuftraege > 0;
+    });
+    pruefe("Nur EINE Tour braucht einen Beifahrer", mitBeifahrer.length === 1);
+    pruefe("Beide Trägeraufträge sind in dieser einen Tour",
+      mitBeifahrer.length === 1 && bewerte(mitBeifahrer[0], bCtx).beifahrerAuftraege === 2);
+    pruefe("Keine Tour fährt den Beifahrer wegen nur eines Auftrags",
+      bTouren.every(function (t) { return bewerte(t, bCtx).beifahrerAuftraege !== 1; }));
+
+    // Ohne Trägerbedarf entstehen keine Beifahrerkosten
+    var ohne = bewerte(touren2[0], mCtx);
+    pruefe("Ohne Trägerbedarf: 0 € Beifahrer", ohne.beifahrerKosten === 0);
+    pruefe("Mit Trägerbedarf entstehen Beifahrerkosten",
+      bewerte(mitBeifahrer[0], bCtx).beifahrerKosten > 0);
 
     var fehler = ergebnisse.filter(function (r) { return !r.ok; });
     var box = document.createElement("div");
