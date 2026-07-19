@@ -24,7 +24,8 @@
 
   <nav class="tabs" aria-label="Leistungsbereiche">
     <div class="wrap tabs-row">
-      <button class="tab is-active" data-tab="transport" type="button">Transport nach Berlin</button>
+      <button class="tab is-active" data-tab="transport" type="button">Nach Berlin</button>
+      <button class="tab" data-tab="rueckladung" type="button">Nach Stuttgart</button>
       <button class="tab" data-tab="sonderfahrt" type="button">Sonderfahrt</button>
       <button class="tab" data-tab="putzservice" type="button">Putzservice</button>
     </div>
@@ -41,7 +42,7 @@
            Geben Sie Ihre Daten ein und erhalten Sie sofort Ihren Preis.</p>
       </div>
 
-      <form id="form-transport" class="card" novalidate>
+      <form id="form-t" class="card" novalidate>
         <h2>Abholung</h2>
         <div class="field">
           <label for="t-pickup-address">Abholadresse <span class="req">*</span></label>
@@ -133,6 +134,109 @@
       </form>
 
       <div class="card result-card" id="t-result" hidden role="status" aria-live="polite"></div>
+    </section>
+
+    <!-- ══════════════ BEREICH 1b: RÜCKLADUNG BERLIN → STUTTGART ══════════════ -->
+    <section id="rueckladung" class="panel" aria-label="Beiladung Berlin nach Stuttgart">
+      <div class="card intro-card">
+        <h1>Beiladung Berlin&nbsp;→&nbsp;Stuttgart</h1>
+        <p>Wir fahren nicht nur hin, sondern auch zurück. Auf dem Rückweg von Berlin nach
+           Stuttgart ist Platz frei – zu genau denselben Konditionen wie in der Gegenrichtung.
+           Geben Sie Ihre Daten ein und erhalten Sie sofort Ihren Preis.</p>
+      </div>
+
+      <form id="form-r" class="card" novalidate>
+        <h2>Abholung <span class="h2-note">(Berlin und Umgebung)</span></h2>
+        <div class="field">
+          <label for="r-pickup-address">Abholadresse <span class="req">*</span></label>
+          <div class="ac-wrap">
+            <input type="text" id="r-pickup-address" autocomplete="off" spellcheck="false"
+                   placeholder="Straße Hausnummer, PLZ Berlin" required>
+          </div>
+          <p class="field-error" hidden></p>
+        </div>
+        <div class="field-row">
+          <div class="field">
+            <label for="r-pickup-floor">Etage <span class="req">*</span></label>
+            <input type="number" id="r-pickup-floor" inputmode="numeric" min="0" max="10" step="1" value="0" required>
+            <p class="field-hint">0 = Erdgeschoss</p>
+            <p class="field-error" hidden></p>
+          </div>
+          <div class="field field-check">
+            <label class="check">
+              <input type="checkbox" id="r-pickup-elevator">
+              <span>Aufzug vorhanden <em>und</em> die Gegenstände passen hinein</span>
+            </label>
+          </div>
+        </div>
+
+        <h2>Lieferung <span class="h2-note">(Stuttgart und Umgebung)</span></h2>
+        <div class="field">
+          <label for="r-delivery-address">Lieferadresse <span class="req">*</span></label>
+          <div class="ac-wrap">
+            <input type="text" id="r-delivery-address" autocomplete="off" spellcheck="false"
+                   placeholder="Straße Hausnummer, PLZ Ort" required>
+          </div>
+          <p class="field-error" hidden></p>
+        </div>
+        <div class="field-row">
+          <div class="field">
+            <label for="r-delivery-floor">Etage <span class="req">*</span></label>
+            <input type="number" id="r-delivery-floor" inputmode="numeric" min="0" max="10" step="1" value="0" required>
+            <p class="field-hint">0 = Erdgeschoss</p>
+            <p class="field-error" hidden></p>
+          </div>
+          <div class="field field-check">
+            <label class="check">
+              <input type="checkbox" id="r-delivery-elevator">
+              <span>Aufzug vorhanden <em>und</em> die Gegenstände passen hinein</span>
+            </label>
+          </div>
+        </div>
+
+        <h2>Was wird transportiert?</h2>
+        <p class="section-hint">Maße bitte pro Gegenstand angeben – wir rechnen automatisch
+           eine kleine Sicherheitsmarge dazu.</p>
+        <div id="r-items" class="items"></div>
+        <button type="button" id="r-add-item" class="btn-secondary">+ Gegenstand hinzufügen</button>
+        <p class="field-error" id="r-items-error" role="alert" hidden></p>
+
+        <h2>Tragen</h2>
+        <div class="field">
+          <span class="label-like">Wird ein zweiter Träger benötigt? <span class="req">*</span></span>
+          <div class="radio-row" role="radiogroup" aria-label="Zweiter Träger benötigt">
+            <label class="check"><input type="radio" name="r-helper" value="nein" checked><span>Nein, eine Person reicht</span></label>
+            <label class="check"><input type="radio" name="r-helper" value="ja"><span>Ja, es muss zu zweit getragen werden</span></label>
+          </div>
+        </div>
+        <div class="field" id="r-self-help-wrap" hidden>
+          <label class="check">
+            <input type="checkbox" id="r-self-help">
+            <span>Ich packe selbst mit an (kein Aufpreis für den zweiten Träger)</span>
+          </label>
+        </div>
+
+        <h2>Ihre Angaben</h2>
+        <div class="field-row">
+          <div class="field">
+            <label for="r-date">Wunschtermin <span class="opt">(optional)</span></label>
+            <input type="date" id="r-date">
+            <p class="field-error" hidden></p>
+          </div>
+          <div class="field">
+            <label for="r-name">Name <span class="opt">(optional)</span></label>
+            <input type="text" id="r-name" autocomplete="name" placeholder="Vor- und Nachname">
+          </div>
+        </div>
+
+        <button type="submit" class="btn-primary" id="r-submit">
+          <span class="btn-label">Preis berechnen</span>
+          <span class="btn-spinner" hidden aria-hidden="true"></span>
+        </button>
+        <p class="form-error" id="r-form-error" role="alert" hidden></p>
+      </form>
+
+      <div class="card result-card" id="r-result" hidden role="status" aria-live="polite"></div>
     </section>
 
     <!-- ══════════════ BEREICH 2: SONDERFAHRT ══════════════ -->

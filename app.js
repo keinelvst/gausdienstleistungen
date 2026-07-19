@@ -203,11 +203,32 @@ var CONFIG = {
     return { ok: true, volumeM3: volume, weightKg: weight };
   }
 
+  // Die beiden Fahrtrichtungen der Beiladung. Beide rechnen mit exakt derselben
+  // Formel – nur Start und Ziel sind vertauscht. "abseitsWennNoerdlich" legt fest,
+  // auf welcher Seite eine Abholung als eigene Anfahrt statt als Umweg zählt.
+  var RICHTUNGEN = {
+    hin: {
+      id: "hin",
+      start: CONFIG.depot,
+      ziel: CONFIG.destination,
+      zielName: "Berlin",
+      abseitsWennNoerdlich: false   // südlich von Stuttgart = abseits der Route
+    },
+    rueck: {
+      id: "rueck",
+      start: CONFIG.destination,
+      ziel: CONFIG.depot,
+      zielName: "Stuttgart",
+      abseitsWennNoerdlich: true    // nördlich von Berlin = abseits der Route
+    }
+  };
+
   // Modellwahl: Abholfahrt oder Umweg (deterministisch über Luftlinie).
-  function chooseKmModel(pickup) {
-    var withinRadius = haversineKm(CONFIG.depot, pickup) <= CONFIG.pickupRadiusKm;
-    var isSouth = pickup.lat < CONFIG.depot.lat;
-    return (withinRadius || isSouth) ? "abholfahrt" : "umweg";
+  function chooseKmModel(pickup, richtung) {
+    var r = richtung || RICHTUNGEN.hin;
+    var imUmkreis = haversineKm(r.start, pickup) <= CONFIG.pickupRadiusKm;
+    var abseits = r.abseitsWennNoerdlich ? (pickup.lat > r.start.lat) : (pickup.lat < r.start.lat);
+    return (imUmkreis || abseits) ? "abholfahrt" : "umweg";
   }
 
   // Fahrzeugkosten je Kilometer (ohne Fahrerlohn):
@@ -294,7 +315,7 @@ var CONFIG = {
 
     // Anteil an Fahrzeug und Fahrzeit: ab vollpreisAbM3 zahlt der Kunde die ganze Fahrt.
     var share = Math.min(totals.volumeM3 / CONFIG.vollpreisAbM3, 1);
-    var model = chooseKmModel(input.pickup);
+    var model = chooseKmModel(input.pickup, input.richtung);
     var l = input.legs;
     var km, hours;
     if (model === "abholfahrt") {
@@ -518,6 +539,19 @@ var CONFIG = {
     checkTrue("Ulm (75 km, südlich) => Abholfahrt", chooseKmModel({ lat: 48.40, lon: 9.99 }) === "abholfahrt");
     checkTrue("Nürnberg => Umweg", chooseKmModel(north) === "umweg");
     checkTrue("Karlsruhe => Umweg", chooseKmModel({ lat: 49.01, lon: 8.40 }) === "umweg");
+
+    // Rückrichtung Berlin → Stuttgart: gespiegelte Logik
+    var rueck = RICHTUNGEN.rueck;
+    checkTrue("Rückweg: Potsdam (Umkreis Berlin) => Abholfahrt",
+      chooseKmModel({ lat: 52.40, lon: 13.06 }, rueck) === "abholfahrt");
+    checkTrue("Rückweg: Rostock (nördlich von Berlin) => Abholfahrt",
+      chooseKmModel({ lat: 54.09, lon: 12.13 }, rueck) === "abholfahrt");
+    checkTrue("Rückweg: Leipzig (auf der Route) => Umweg",
+      chooseKmModel({ lat: 51.34, lon: 12.37 }, rueck) === "umweg");
+    checkTrue("Rückweg: Nürnberg (auf der Route) => Umweg",
+      chooseKmModel(north, rueck) === "umweg");
+    checkTrue("Rückweg: Start ist Berlin, Ziel Stuttgart",
+      rueck.start === CONFIG.destination && rueck.ziel === CONFIG.depot);
 
     // km- und Zeit-Formeln
     var abhol = calculateBerlinPrice(berlinInput({}));
@@ -996,14 +1030,14 @@ var CONFIG = {
 
   var itemCounter = 0;
 
-  function addItemRow() {
+  function addItemRow(prefix) {
     itemCounter++;
     var n = itemCounter;
-    var container = document.getElementById("t-items");
+    var container = document.getElementById(prefix + "-items");
     var row = document.createElement("div");
     row.className = "item-row";
     function itemField(key, labelText, min, max, step, mode, value) {
-      var id = "t-item-" + n + "-" + key;
+      var id = prefix + "-item-" + n + "-" + key;
       return '<div class="field"><label for="' + id + '">' + labelText + '</label>' +
              '<input type="number" id="' + id + '" inputmode="' + mode + '" min="' + min +
              '" max="' + max + '" step="' + step + '"' + (value ? ' value="' + value + '"' : '') +
@@ -1023,22 +1057,22 @@ var CONFIG = {
       '</div>';
     row.querySelector(".item-remove").addEventListener("click", function () {
       row.remove();
-      renumberItems();
+      renumberItems(prefix);
     });
     container.appendChild(row);
-    renumberItems();
+    renumberItems(prefix);
   }
 
-  function renumberItems() {
-    var rows = document.querySelectorAll("#t-items .item-row");
+  function renumberItems(prefix) {
+    var rows = document.querySelectorAll("#" + prefix + "-items .item-row");
     rows.forEach(function (row, i) {
       row.querySelector(".item-title").textContent = "Gegenstand " + (i + 1);
       row.querySelector(".item-remove").style.display = rows.length > 1 ? "" : "none";
     });
   }
 
-  function collectItems() {
-    var rows = document.querySelectorAll("#t-items .item-row");
+  function collectItems(prefix) {
+    var rows = document.querySelectorAll("#" + prefix + "-items .item-row");
     var items = [];
     var valid = true;
     rows.forEach(function (row) {
@@ -1075,9 +1109,10 @@ var CONFIG = {
     return valid ? items : null;
   }
 
-  function transportWaMessage(data, result, flags) {
+  function transportWaMessage(data, result, flags, richtung) {
+    var r = richtung || RICHTUNGEN.hin;
     var lines = [];
-    lines.push("Anfrage Beiladung Stuttgart → Berlin");
+    lines.push("Anfrage Beiladung " + (r.id === "rueck" ? "Berlin → Stuttgart" : "Stuttgart → Berlin"));
     if (data.name) lines.push("Name: " + data.name);
     lines.push("──────────────");
     lines.push("Abholung: " + data.pickup.label + ", Etage " + data.pickup.floors +
@@ -1120,27 +1155,33 @@ var CONFIG = {
     return lines.join("\n");
   }
 
-  function initTransport() {
-    var form = document.getElementById("form-transport");
-    var resultEl = document.getElementById("t-result");
-    var pickupInput = document.getElementById("t-pickup-address");
-    var deliveryInput = document.getElementById("t-delivery-address");
+  // Baut einen Beiladungs-Rechner auf. prefix ist das Kürzel der Feld-IDs
+  // ("t" für Stuttgart → Berlin, "r" für die Rückladung Berlin → Stuttgart),
+  // richtung enthält Start und Ziel. Die Rechenformel ist für beide identisch.
+  function initBeiladung(prefix, richtung) {
+    var form = document.getElementById("form-" + prefix);
+    if (!form) return;
+    var resultEl = document.getElementById(prefix + "-result");
+    var pickupInput = document.getElementById(prefix + "-pickup-address");
+    var deliveryInput = document.getElementById(prefix + "-delivery-address");
 
-    attachAutocomplete(pickupInput, CONFIG.depot);
-    attachAutocomplete(deliveryInput, CONFIG.destination);
+    attachAutocomplete(pickupInput, richtung.start);
+    attachAutocomplete(deliveryInput, richtung.ziel);
 
-    addItemRow();
-    document.getElementById("t-add-item").addEventListener("click", addItemRow);
+    addItemRow(prefix);
+    document.getElementById(prefix + "-add-item").addEventListener("click", function () {
+      addItemRow(prefix);
+    });
 
     // "Ich helfe selbst mit" nur zeigen, wenn ein Träger benötigt wird.
     // Auch initial und bei pageshow synchronisieren – Browser wie Firefox
     // stellen Formularwerte nach einem Reload ohne change-Event wieder her.
-    var selfHelpWrap = document.getElementById("t-self-help-wrap");
+    var selfHelpWrap = document.getElementById(prefix + "-self-help-wrap");
     function syncSelfHelp() {
-      var checked = form.querySelector('input[name="t-helper"]:checked');
+      var checked = form.querySelector('input[name="' + prefix + '-helper"]:checked');
       selfHelpWrap.hidden = !checked || checked.value !== "ja";
     }
-    form.querySelectorAll('input[name="t-helper"]').forEach(function (r) {
+    form.querySelectorAll('input[name="' + prefix + '-helper"]').forEach(function (r) {
       r.addEventListener("change", syncSelfHelp);
     });
     syncSelfHelp();
@@ -1151,15 +1192,15 @@ var CONFIG = {
       clearFormErrors(form);
       resultEl.hidden = true;
 
-      var pickupFloor = validateInt(document.getElementById("t-pickup-floor"), 0, 10, "Bitte Etage 0–10 angeben.");
-      var deliveryFloor = validateInt(document.getElementById("t-delivery-floor"), 0, 10, "Bitte Etage 0–10 angeben.");
-      var items = collectItems();
+      var pickupFloor = validateInt(document.getElementById(prefix + "-pickup-floor"), 0, 10, "Bitte Etage 0–10 angeben.");
+      var deliveryFloor = validateInt(document.getElementById(prefix + "-delivery-floor"), 0, 10, "Bitte Etage 0–10 angeben.");
+      var items = collectItems(prefix);
       if (items !== null && items.length === 0) {
-        showFormError("t-items-error", "Bitte mindestens einen Gegenstand angeben.");
+        showFormError(prefix + "-items-error", "Bitte mindestens einen Gegenstand angeben.");
         items = null;
       }
 
-      var dateInput = document.getElementById("t-date");
+      var dateInput = document.getElementById(prefix + "-date");
       var date = dateInput.value || "";
       if (date) {
         var today = new Date(); today.setHours(0, 0, 0, 0);
@@ -1174,16 +1215,16 @@ var CONFIG = {
 
       if (pickupFloor === null || deliveryFloor === null || items === null || date === null ||
           !pickupInput.value.trim() || !deliveryInput.value.trim()) {
-        showFormError("t-form-error", "Bitte prüfen Sie die rot markierten Felder.");
+        showFormError(prefix + "-form-error", "Bitte prüfen Sie die rot markierten Felder.");
         return;
       }
 
-      var btn = document.getElementById("t-submit");
+      var btn = document.getElementById(prefix + "-submit");
       setLoading(btn, true);
 
       Promise.all([
-        resolveAddress(pickupInput, CONFIG.depot),
-        resolveAddress(deliveryInput, CONFIG.destination)
+        resolveAddress(pickupInput, richtung.start),
+        resolveAddress(deliveryInput, richtung.ziel)
       ]).then(function (places) {
         var pickup = places[0], delivery = places[1];
         if (!pickup) { setFieldError(pickupInput, "Adresse nicht gefunden – bitte Straße, PLZ und Ort angeben."); }
@@ -1192,32 +1233,33 @@ var CONFIG = {
 
         var data = {
           pickup: { lat: pickup.lat, lon: pickup.lon, label: pickup.label,
-                    floors: pickupFloor, elevator: document.getElementById("t-pickup-elevator").checked },
+                    floors: pickupFloor, elevator: document.getElementById(prefix + "-pickup-elevator").checked },
           delivery: { lat: delivery.lat, lon: delivery.lon, label: delivery.label,
-                      floors: deliveryFloor, elevator: document.getElementById("t-delivery-elevator").checked },
+                      floors: deliveryFloor, elevator: document.getElementById(prefix + "-delivery-elevator").checked },
           items: items,
-          helperNeeded: form.querySelector('input[name="t-helper"]:checked').value === "ja",
-          customerHelps: document.getElementById("t-self-help").checked,
+          helperNeeded: form.querySelector('input[name="' + prefix + '-helper"]:checked').value === "ja",
+          customerHelps: document.getElementById(prefix + "-self-help").checked,
           date: date,
-          name: document.getElementById("t-name").value.trim()
+          name: document.getElementById(prefix + "-name").value.trim()
         };
 
-        // Lieferziel-Plausibilität: nur Berlin + Umkreis bekommt einen Sofort-Preis
-        if (haversineKm(data.delivery, CONFIG.destination) > CONFIG.deliveryMaxKmFromBerlin) {
-          var waFar = transportWaMessage(data, null, { farDelivery: true, estimated: false });
+        // Lieferziel-Plausibilität: nur das Zielgebiet bekommt einen Sofort-Preis
+        if (haversineKm(data.delivery, richtung.ziel) > CONFIG.deliveryMaxKmFromBerlin) {
+          var waFar = transportWaMessage(data, null, { farDelivery: true, estimated: false }, richtung);
           showResult(resultEl,
             '<h3 class="result-title">Bitte individuell anfragen</h3>' +
-            '<p class="result-error-msg">Diese Lieferadresse liegt außerhalb von Berlin und Umgebung. ' +
-            'Unser Sofort-Preis gilt für Lieferungen nach Berlin (+' + CONFIG.deliveryMaxKmFromBerlin +
+            '<p class="result-error-msg">Diese Lieferadresse liegt außerhalb von ' + richtung.zielName +
+            ' und Umgebung. Unser Sofort-Preis gilt für Lieferungen nach ' + richtung.zielName + ' (+' +
+            CONFIG.deliveryMaxKmFromBerlin +
             ' km). Gerne machen wir Ihnen ein individuelles Angebot!</p>' +
             whatsappBlock(waFar), true);
           return;
         }
 
         return Promise.all([
-          routeKm(CONFIG.depot, data.pickup),
+          routeKm(richtung.start, data.pickup),
           routeKm(data.pickup, data.delivery),
-          routeKm(CONFIG.depot, data.delivery),
+          routeKm(richtung.start, data.delivery),
           getDieselPrice()
         ]).then(function (r) {
           var estimated = r[0].estimated || r[1].estimated || r[2].estimated;
@@ -1229,7 +1271,8 @@ var CONFIG = {
             delivery: data.delivery,
             helperNeeded: data.helperNeeded,
             customerHelps: data.customerHelps,
-            dieselPricePerL: fuel.price
+            dieselPricePerL: fuel.price,
+            richtung: richtung
           });
 
           if (!result.ok) {
@@ -1246,7 +1289,7 @@ var CONFIG = {
                     CONFIG.maxItemDimCm.l + " × " + CONFIG.maxItemDimCm.w + " × " + CONFIG.maxItemDimCm.h +
                     " cm). Gerne prüfen wir das individuell!";
             }
-            var waBig = transportWaMessage(data, result, { estimated: estimated });
+            var waBig = transportWaMessage(data, result, { estimated: estimated }, richtung);
             showResult(resultEl,
               '<h3 class="result-title">Bitte individuell anfragen</h3>' +
               '<p class="result-error-msg">' + esc(msg) + '</p>' + whatsappBlock(waBig), true);
@@ -1280,7 +1323,7 @@ var CONFIG = {
             : { text: "Diesel: " + fmtNum(fuel.price, 2) + " €/l (aktuell)" });
           if (estimated) badges.push({ text: "Entfernung geschätzt (Luftlinie)", warn: true });
 
-          var wa = transportWaMessage(data, result, { estimated: estimated });
+          var wa = transportWaMessage(data, result, { estimated: estimated }, richtung);
           showResult(resultEl,
             '<h3 class="result-title">Ihr Preis: ' + fmtEur0(result.total) + '</h3>' +
             '<p class="result-sub">Beiladung ' + esc(pickup.label) + ' → ' + esc(delivery.label) + '</p>' +
@@ -1291,7 +1334,7 @@ var CONFIG = {
         });
       }).catch(function (err) {
         if (!err || !err.handled) {
-          showFormError("t-form-error", "Die Berechnung ist fehlgeschlagen. Bitte prüfen Sie Ihre Internetverbindung und versuchen Sie es erneut.");
+          showFormError(prefix + "-form-error", "Die Berechnung ist fehlgeschlagen. Bitte prüfen Sie Ihre Internetverbindung und versuchen Sie es erneut.");
         }
       }).then(function () {
         setLoading(btn, false);
@@ -1639,7 +1682,8 @@ var CONFIG = {
   document.addEventListener("DOMContentLoaded", function () {
     fillConfigPlaceholders();
     initTabs();
-    initTransport();
+    initBeiladung("t", RICHTUNGEN.hin);
+    initBeiladung("r", RICHTUNGEN.rueck);
     initSonderfahrt();
     initPutzservice();
     initImpressum();
