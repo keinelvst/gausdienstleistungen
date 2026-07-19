@@ -401,6 +401,41 @@ textarea { resize: vertical; }
 }
 
 .breakdown li .bd-label { color: var(--ink-soft); }
+
+/* Aufschlüsselung ohne Einzelbeträge – der Kunde sieht nur die Spanne */
+.bd-titel {
+  margin: 0 0 6px;
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--ink-soft);
+  text-transform: uppercase;
+  letter-spacing: .03em;
+}
+.breakdown-ohne-betrag li { display: block; padding: 7px 0; }
+.breakdown-ohne-betrag li::before {
+  content: "✓";
+  color: var(--ok);
+  font-weight: 700;
+  margin-right: 8px;
+}
+.breakdown-ohne-betrag li .bd-label { color: var(--ink); }
+
+.bd-total-spanne {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 12px;
+  margin: 4px 0 16px;
+  padding-top: 12px;
+  border-top: 2px solid var(--blue-900);
+}
+.bd-total-spanne span { font-weight: 700; }
+.bd-total-spanne strong {
+  font-size: 19px;
+  color: var(--blue-900);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
 .breakdown li .bd-amount { font-variant-numeric: tabular-nums; white-space: nowrap; }
 
 .breakdown li.bd-total {

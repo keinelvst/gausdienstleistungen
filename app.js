@@ -94,7 +94,10 @@ var CONFIG = {
   // In der WhatsApp-Nachricht steht kein fester Betrag, sondern eine Spanne
   // um den berechneten Preis. So bleibt Luft für Dinge, die sich erst vor
   // Ort zeigen (enge Treppe, Halteverbot, mehr als angegeben).
-  spanneUnten: -5,               // Prozent unter dem berechneten Preis
+  // Der Kunde bekommt AUSSCHLIESSLICH diese Spanne zu sehen – weder auf der
+  // Seite noch in der WhatsApp-Nachricht steht der berechnete Betrag.
+  // Den exakten Preis siehst nur du im Adminbereich.
+  spanneUnten: -1,               // Prozent unter dem berechneten Preis
   spanneOben: 15,                // Prozent darüber
   vollpreisAbM3: 7.5,            // ab dieser Ladung zahlt der Kunde die Fahrt zu 100 %
                                  // (Rest geht für Packlücken, Sperriges und Gänge drauf)
@@ -736,14 +739,17 @@ var CONFIG = {
 
     // ── Preisspanne für die Anfrage ──
     var sp = preisSpanne(400);
-    check("Spanne unten bei 400 € => 380 €", sp.von, 380);
-    check("Spanne oben bei 400 € => 460 €", sp.bis, 460);
+    check("Spanne unten bei 400 € => 396 € (−1 %)", sp.von, 396);
+    check("Spanne oben bei 400 € => 460 € (+15 %)", sp.bis, 460);
     checkTrue("Untergrenze liegt unter dem Preis", preisSpanne(137).von < 137);
     checkTrue("Obergrenze liegt über dem Preis", preisSpanne(137).bis > 137);
     checkTrue("Auch beim Mindestpreis bleibt die Spanne sinnvoll",
-      preisSpanne(60).von === 57 && preisSpanne(60).bis === 69);
+      preisSpanne(60).von === 59 && preisSpanne(60).bis === 69);
     checkTrue("Spanne wird als Text mit Gedankenstrich ausgegeben",
       spanneText(400).indexOf("–") !== -1);
+    // Der berechnete Betrag darf dem Kunden nirgends begegnen
+    checkTrue("Spannentext enthält den berechneten Preis nicht",
+      spanneText(400).indexOf("400") === -1);
 
     // ── Träger nur an einer der beiden Adressen ──
     function mitTraeger(ab, lief, hilftSelbst) {
@@ -1326,14 +1332,19 @@ var CONFIG = {
     };
   }
 
+  // Aufschlüsselung für den Kunden: WAS enthalten ist, aber ohne Einzelbeträge.
+  // Würden die Beträge dastehen, ließe sich der berechnete Preis einfach
+  // zusammenzählen – gezeigt wird dem Kunden aber nur die Spanne.
+  // Den vollständigen Betrag mit allen Posten siehst du im Adminbereich.
   function breakdownHtml(lines, total) {
-    var html = '<ul class="breakdown">';
+    var html = '<p class="bd-titel">Darin enthalten:</p><ul class="breakdown breakdown-ohne-betrag">';
     lines.forEach(function (l) {
-      html += '<li><span class="bd-label">' + esc(l.label) + '</span>' +
-              '<span class="bd-amount">' + esc(l.amount) + '</span></li>';
+      if (l.leer) return;                 // Posten ohne Kosten weglassen
+      html += '<li><span class="bd-label">' + esc(l.label) + '</span></li>';
     });
-    html += '<li class="bd-total"><span class="bd-label">Gesamtpreis</span>' +
-            '<span class="bd-amount">' + esc(total) + '</span></li></ul>';
+    html += '</ul>' +
+            '<p class="bd-total-spanne"><span>Ihr Preisrahmen</span>' +
+            '<strong>' + esc(total) + '</strong></p>';
     return html;
   }
 
@@ -1357,8 +1368,9 @@ var CONFIG = {
   }
 
   function legalNote() {
-    return '<p class="result-note">Endpreis – gemäß § 19 UStG wird keine Umsatzsteuer berechnet. ' +
-           'Preis gültig ' + CONFIG.priceValidityDays + ' Tage (Stand ' +
+    return '<p class="result-note">Der genannte Rahmen ist ein Endpreis – gemäß § 19 UStG wird ' +
+           'keine Umsatzsteuer berechnet. Es kommen keine weiteren Gebühren dazu. ' +
+           'Gültig ' + CONFIG.priceValidityDays + ' Tage (Stand ' +
            new Date().toLocaleDateString("de-DE") + ').</p>';
   }
 
@@ -1477,11 +1489,6 @@ var CONFIG = {
     if (result && result.ok) {
       lines.push("Strecke: " + fmtKm(result.chargeableKm) + " (" +
                  (result.model === "abholfahrt" ? "Abholfahrt" : "Umweg") + ")");
-      lines.push("Fahrt: " + fmtEur(result.fahrtCost) +
-                 " | Verladen: " + fmtEur(result.handlingCost) +
-                 " | Etagen: " + fmtEur(result.floorCost) +
-                 " | Schwergut: " + fmtEur(result.heavyCost) +
-                 " | Beifahrer: " + fmtEur(result.helperCost));
       lines.push("PREISRAHMEN: " + spanneText(result.total));
       lines.push("(Diesel " + fmtNum(result.dieselPricePerL, 2) + " €/l, Stand " +
                  new Date().toLocaleDateString("de-DE") + ", gültig " + CONFIG.priceValidityDays +
@@ -1621,6 +1628,19 @@ var CONFIG = {
               volumenAnteil: result ? result.volumeShare : null,
               mitfahrtKm: result ? result.mitfahrtKm : null,
               blockierteKm: result ? result.blockierteKm : null,
+              // Der genaue Preis mit allen Posten – nur für dich im
+              // Adminbereich. Der Kunde sieht davon nur die Spanne.
+              aufschluesselung: result && result.ok ? {
+                fahrt: Math.round(result.fahrtCost * 100) / 100,
+                verladen: Math.round(result.handlingCost * 100) / 100,
+                stellplatz: Math.round(result.platzCost * 100) / 100,
+                etagen: Math.round(result.floorCost * 100) / 100,
+                schwergut: Math.round(result.heavyCost * 100) / 100,
+                beifahrer: Math.round(result.helperCost * 100) / 100,
+                gesamt: result.total,
+                spanneVon: preisSpanne(result.total).von,
+                spanneBis: preisSpanne(result.total).bis
+              } : null,
               hinweis: hinweis || null
             }
           });
@@ -1704,18 +1724,16 @@ var CONFIG = {
                                 " belegt)", amount: fmtEur(result.platzCost) });
           }
           lines = lines.concat([
-            { label: "Etagenzuschlag (Tragen über Treppen)", amount: fmtEur(result.floorCost) },
+            { label: "Etagenzuschlag (Tragen über Treppen)", amount: fmtEur(result.floorCost),
+              leer: result.floorCost < 0.005 },
             { label: "Schwere Gegenstände (" + fmtNum(result.weightKg, 0) + " kg gesamt)",
-              amount: fmtEur(result.heavyCost) },
+              amount: fmtEur(result.heavyCost), leer: result.heavyCost < 0.005 },
             { label: "Beifahrer / zweiter Träger" +
                      (result.traegerStopps === 1
                        ? " (nur " + (result.traegerAbholung ? "beim Abholen" : "beim Liefern") + ")"
                        : ""),
-              amount: fmtEur(result.helperCost) }
+              amount: fmtEur(result.helperCost), leer: result.helperCost < 0.005 }
           ]);
-          if (result.minApplied) {
-            lines.push({ label: "Mindestauftragswert", amount: fmtEur(Math.max(0, CONFIG.minPriceEur - result.subtotal)) });
-          }
 
           var badges = [
             { text: result.model === "abholfahrt" ? "Abholfahrt-Modell" : "Umweg-Modell (liegt auf unserer Route)" }
@@ -1737,10 +1755,10 @@ var CONFIG = {
 
           var wa = transportWaMessage(data, result, { estimated: estimated }, richtung);
           showResult(resultEl,
-            '<h3 class="result-title">Ihr Preis: ' + fmtEur0(result.total) + '</h3>' +
+            '<h3 class="result-title">Ihr Preis: ' + esc(spanneText(result.total)) + '</h3>' +
             '<p class="result-sub">Beiladung ' + esc(pickup.label) + ' → ' + esc(delivery.label) + '</p>' +
             badgesHtml(badges) +
-            breakdownHtml(lines, fmtEur0(result.total)) +
+            breakdownHtml(lines, spanneText(result.total)) +
             whatsappBlock(wa, anfrageFuer(result, null), result.total) +
             legalNote(), false);
         });
@@ -1773,11 +1791,7 @@ var CONFIG = {
     lines.push("──────────────");
     lines.push("Strecke gesamt: " + fmtKm(result.totalKm) + " (inkl. Rückfahrt), ca. " +
                fmtNum(result.totalHours, 1) + " Std.");
-    lines.push("Fahrzeug: " + fmtEur(result.vehicleCost) +
-               " | Fahrer: " + fmtEur(result.driverCost) +
-               (result.helperCost > 0 ? " | Beifahrer: " + fmtEur(result.helperCost) : ""));
-    lines.push("PREISRAHMEN: " + spanneText(result.total) +
-               (result.minApplied ? " (Mindestpreis)" : ""));
+    lines.push("PREISRAHMEN: " + spanneText(result.total));
     if (flags.estimated) lines.push("(Entfernung geschätzt)");
     return lines.join("\n");
   }
@@ -1869,9 +1883,6 @@ var CONFIG = {
             lines.push({ label: "Beifahrer (ca. " + fmtNum(result.totalHours, 1) + " Std.)",
                          amount: fmtEur(result.helperCost) });
           }
-          if (result.minApplied) {
-            lines.push({ label: "Mindestpreis Sonderfahrt", amount: fmtEur(Math.max(0, CONFIG.sonderfahrtMinPriceEur - result.subtotal)) });
-          }
 
           var badges = [
             { text: "Exklusiver Transporter" },
@@ -1896,10 +1907,10 @@ var CONFIG = {
             }
           });
           showResult(resultEl,
-            '<h3 class="result-title">Ihr Preis: ' + fmtEur0(result.total) + '</h3>' +
+            '<h3 class="result-title">Ihr Preis: ' + esc(spanneText(result.total)) + '</h3>' +
             '<p class="result-sub">Sonderfahrt ' + esc(pickup.label) + ' → ' + esc(dest.label) + '</p>' +
             badgesHtml(badges) +
-            breakdownHtml(lines, fmtEur0(result.total)) +
+            breakdownHtml(lines, spanneText(result.total)) +
             whatsappBlock(wa, anfrage, result.total) +
             legalNote(), false);
         });
@@ -1930,9 +1941,8 @@ var CONFIG = {
     if (outOfArea) {
       lines.push("Adresse außerhalb des Einsatzgebiets – bitte um individuelles Angebot.");
     } else {
-      lines.push("Arbeitszeit: " + result.billedHours + " Std. × " + result.staff + " × " +
-                 fmtEur0(CONFIG.cleaningHourlyRateEur) + " = " + fmtEur(result.labor));
-      lines.push("Anfahrt: " + fmtEur(result.travelFee));
+      lines.push("Arbeitszeit: " + result.billedHours + " Std. mit " + result.staff +
+                 (result.staff > 1 ? " Kräften" : " Kraft"));
       lines.push("PREISRAHMEN: " + spanneText(result.total));
     }
     return lines.join("\n");
@@ -2031,8 +2041,8 @@ var CONFIG = {
         }
 
         var lines = [
-          { label: "Arbeitszeit (" + result.billedHours + " Std. × " + result.staff +
-                   (result.staff > 1 ? " Kräfte" : " Kraft") + " × " + fmtEur0(CONFIG.cleaningHourlyRateEur) + ")",
+          { label: "Arbeitszeit: " + result.billedHours + " Stunden mit " + result.staff +
+                   (result.staff > 1 ? " Reinigungskräften" : " Reinigungskraft"),
             amount: fmtEur(result.labor) },
           { label: "Anfahrt (ab " + CONFIG.cleaningBase.label + ")", amount: fmtEur(result.travelFee) }
         ];
@@ -2044,10 +2054,10 @@ var CONFIG = {
 
         var wa = cleaningWaMessage(data, result, false);
         showResult(resultEl,
-          '<h3 class="result-title">Ihr Preis: ' + fmtEur0(result.total) + '</h3>' +
+          '<h3 class="result-title">Ihr Preis: ' + esc(spanneText(result.total)) + '</h3>' +
           '<p class="result-sub">' + esc(data.service) + ' – ' + esc(place.label) + '</p>' +
           badgesHtml(badges) +
-          breakdownHtml(lines, fmtEur0(result.total)) +
+          breakdownHtml(lines, spanneText(result.total)) +
           whatsappBlock(wa, putzAnfrage(result, null), result.total) +
           legalNote(), false);
       }).catch(function (err) {

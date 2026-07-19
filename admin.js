@@ -14,7 +14,7 @@
   "use strict";
 
   var H = window.GausPreis.hilfen;
-  var esc = H.esc, fmtEur0 = H.fmtEur0, fmtKm = H.fmtKm, fmtNum = H.fmtNum;
+  var esc = H.esc, fmtEur = H.fmtEur, fmtEur0 = H.fmtEur0, fmtKm = H.fmtKm, fmtNum = H.fmtNum;
   var DB = window.GausDB;
 
   var BEREICH_NAME = {
@@ -200,6 +200,17 @@
       zeilen.push(["Träger", d.kundeHilftMit ? "gewünscht, Kunde hilft mit" : "gewünscht"]);
     }
     if (d.modell) zeilen.push(["Streckenmodell", d.modell === "abholfahrt" ? "Abholfahrt" : "Umweg (auf der Route)"]);
+    if (d.aufschluesselung) {
+      var a2 = d.aufschluesselung;
+      var posten = [
+        ["Fahrt", a2.fahrt], ["Verladen", a2.verladen], ["Stellplatz", a2.stellplatz],
+        ["Etagen", a2.etagen], ["Schwergut", a2.schwergut], ["Beifahrer", a2.beifahrer]
+      ].filter(function (x) { return x[1] > 0; })
+       .map(function (x) { return esc(x[0]) + " " + fmtEur(x[1]); }).join(" · ");
+      zeilen.push(["Aufschlüsselung", posten || "–"]);
+      zeilen.push(["Dem Kunden genannt", fmtEur0(a2.spanneVon) + " – " + fmtEur0(a2.spanneBis) +
+                   ' <span class="ak-klein">(berechnet: ' + fmtEur0(a2.gesamt) + ")</span>"]);
+    }
     if (d.hinweis) zeilen.push(["Hinweis", esc(d.hinweis)]);
 
     var stuecke = "";
