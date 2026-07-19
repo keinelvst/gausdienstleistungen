@@ -124,6 +124,10 @@
             <label for="t-name">Name <span class="opt">(optional)</span></label>
             <input type="text" id="t-name" autocomplete="name" placeholder="Vor- und Nachname">
           </div>
+          <div class="field">
+            <label for="t-phone">Telefon <span class="opt">(optional)</span></label>
+            <input type="tel" id="t-phone" autocomplete="tel" placeholder="Für Rückfragen zum Termin">
+          </div>
         </div>
 
         <button type="submit" class="btn-primary" id="t-submit">
@@ -227,6 +231,10 @@
             <label for="r-name">Name <span class="opt">(optional)</span></label>
             <input type="text" id="r-name" autocomplete="name" placeholder="Vor- und Nachname">
           </div>
+          <div class="field">
+            <label for="r-phone">Telefon <span class="opt">(optional)</span></label>
+            <input type="tel" id="r-phone" autocomplete="tel" placeholder="Für Rückfragen zum Termin">
+          </div>
         </div>
 
         <button type="submit" class="btn-primary" id="r-submit">
@@ -304,9 +312,15 @@
             <input type="number" id="s-dest-floor" inputmode="numeric" min="0" max="10" step="1">
           </div>
         </div>
-        <div class="field">
-          <label for="s-name">Name <span class="opt">(optional)</span></label>
-          <input type="text" id="s-name" autocomplete="name" placeholder="Vor- und Nachname">
+        <div class="grid-2">
+          <div class="field">
+            <label for="s-name">Name <span class="opt">(optional)</span></label>
+            <input type="text" id="s-name" autocomplete="name" placeholder="Vor- und Nachname">
+          </div>
+          <div class="field">
+            <label for="s-phone">Telefon <span class="opt">(optional)</span></label>
+            <input type="tel" id="s-phone" autocomplete="tel" placeholder="Für Rückfragen zum Termin">
+          </div>
         </div>
 
         <button type="submit" class="btn-primary" id="s-submit">
@@ -369,6 +383,10 @@
             <label for="p-name">Name <span class="opt">(optional)</span></label>
             <input type="text" id="p-name" autocomplete="name" placeholder="Vor- und Nachname">
           </div>
+          <div class="field">
+            <label for="p-phone">Telefon <span class="opt">(optional)</span></label>
+            <input type="tel" id="p-phone" autocomplete="tel" placeholder="Für Rückfragen zum Termin">
+          </div>
         </div>
 
         <button type="submit" class="btn-primary" id="p-submit">
@@ -390,6 +408,7 @@
          (der Transportpreis nach Berlin richtet sich nach dem tagesaktuellen Dieselpreis).</p>
       <p class="footer-links">
         <a href="#" id="impressum-link">Impressum</a>
+        <a href="admin.html">Interner Bereich</a>
       </p>
       <div id="impressum" class="impressum" hidden>
         <h3>Impressum</h3>
@@ -403,5 +422,6 @@
   </footer>
 
   <script src="app.js"></script>
+  <script src="db.js"></script>
 </body>
 </html>

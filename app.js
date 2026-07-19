@@ -99,6 +99,22 @@ var CONFIG = {
     "Fensterreinigung"
   ],
 
+  // ── Adminbereich & Datenbank ───────────────────────────────────────
+  // Speichert jede Anfrage automatisch, damit du sie unter admin.html
+  // siehst und daraus Touren planen kannst.
+  // Beide Werte bekommst du in Supabase unter Project Settings → API.
+  // Anleitung: SUPABASE-EINRICHTUNG.md. Solange sie leer sind, läuft der
+  // Adminbereich im Übungsmodus (Daten nur auf dem eigenen Gerät).
+  supabaseUrl: "",               // z. B. "https://abcdefghijkl.supabase.co"
+  supabaseAnonKey: "",           // der lange "anon public"-Schlüssel (eyJ…)
+                                 // NIEMALS den "service_role"-Schlüssel hier eintragen!
+
+  // ── Tourenplanung (nur Adminbereich) ───────────────────────────────
+  maxTourStunden: 9,             // Obergrenze reine Fahrzeit je Tour/Tag (Vorgabe Inhaber)
+  tourStartZeit: "07:00",        // geplanter Abfahrtszeitpunkt (nur für die Anzeige)
+  pauseNachStunden: 4.5,         // Lenkzeit bis zur Pflichtpause (§ EU-Sozialvorschriften)
+  pauseMinuten: 45,              // Länge der Pflichtpause – wird in der Tour eingeplant
+
   // ── APIs & Fallbacks ───────────────────────────────────────────────
   // OpenRouteService: kostenloser Key auf openrouteservice.org.
   // Leer lassen => Entfernungen werden über Luftlinie × roadFactor geschätzt.
@@ -976,16 +992,74 @@ var CONFIG = {
   var WA_ICON = '<svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">' +
     '<path d="M12 2a10 10 0 0 0-8.6 15.1L2 22l5-1.3A10 10 0 1 0 12 2zm0 18.2a8.2 8.2 0 0 1-4.2-1.2l-.3-.2-3 .8.8-2.9-.2-.3A8.2 8.2 0 1 1 12 20.2zm4.5-6.1c-.2-.1-1.5-.7-1.7-.8-.2-.1-.4-.1-.6.1-.2.2-.6.8-.8 1-.1.2-.3.2-.5.1a6.7 6.7 0 0 1-3.4-3c-.3-.4 0-.5.1-.7l.4-.5c.1-.2.2-.3.3-.5v-.5c0-.1-.6-1.4-.8-1.9-.2-.5-.4-.4-.6-.4h-.5c-.2 0-.5.1-.7.3-.2.3-.9.9-.9 2.2s.9 2.5 1.1 2.7c.1.2 1.9 2.9 4.6 4.1.6.3 1.1.4 1.5.6.6.2 1.2.2 1.6.1.5-.1 1.5-.6 1.7-1.2.2-.6.2-1.1.2-1.2 0-.1-.2-.2-.4-.3z"/></svg>';
 
-  function whatsappBlock(message) {
+  // Anfragen, die beim Klick auf den WhatsApp-Button gespeichert werden.
+  // Zwischenlager, weil der Button als HTML-Text erzeugt wird.
+  var offeneAnfragen = {};
+  var anfrageZaehler = 0;
+
+  function whatsappBlock(message, anfrage) {
     var number = CONFIG.whatsappNumber || "";
     if (!number || number.indexOf("X") !== -1) {
       return '<span class="btn-whatsapp is-disabled">' + WA_ICON + ' Per WhatsApp anfragen</span>' +
              '<p class="wa-hint">WhatsApp ist noch nicht eingerichtet – Nummer in app.js (CONFIG.whatsappNumber) eintragen.</p>';
     }
+    var attr = "";
+    if (anfrage) {
+      var schluessel = "a" + (++anfrageZaehler);
+      offeneAnfragen[schluessel] = anfrage;
+      attr = ' data-anfrage="' + schluessel + '"';
+    }
     var href = "https://wa.me/" + number + "?text=" + encodeURIComponent(message);
-    return '<a class="btn-whatsapp" href="' + esc(href) + '" target="_blank" rel="noopener">' +
+    return '<a class="btn-whatsapp"' + attr + ' href="' + esc(href) + '" target="_blank" rel="noopener">' +
            WA_ICON + ' Per WhatsApp anfragen</a>' +
-           '<p class="wa-hint">Öffnet WhatsApp mit Ihrer fertigen Anfrage – Sie können sie vor dem Senden noch prüfen.</p>';
+           '<p class="wa-hint">Öffnet WhatsApp mit Ihrer fertigen Anfrage – Sie können sie vor dem Senden noch prüfen.' +
+           (anfrage ? ' Ihre Angaben werden dabei zur Bearbeitung der Anfrage gespeichert.' : '') + '</p>';
+  }
+
+  // Beim Klick auf den WhatsApp-Button die Anfrage in der Datenbank ablegen,
+  // damit sie im Adminbereich erscheint. Läuft absichtlich im Hintergrund:
+  // Ein Fehler darf den Kunden niemals aufhalten oder eine Meldung erzeugen.
+  function initAnfrageSpeicher() {
+    document.addEventListener("click", function (ev) {
+      var link = ev.target && ev.target.closest && ev.target.closest("a.btn-whatsapp[data-anfrage]");
+      if (!link) return;
+      var schluessel = link.getAttribute("data-anfrage");
+      var row = offeneAnfragen[schluessel];
+      link.removeAttribute("data-anfrage");   // nur ein einziges Mal speichern
+      delete offeneAnfragen[schluessel];
+      if (!row || !window.GausDB) return;
+      try {
+        window.GausDB.anfrageAnlegen(row).catch(function () { /* still */ });
+      } catch (e) { /* still */ }
+    });
+  }
+
+  // Baut den Datensatz für die Datenbank. "adresse2" ist bei Transporten die
+  // Lieferadresse, beim Putzservice bleibt sie leer.
+  function anfrageDatensatz(bereich, felder) {
+    var a = felder.abholung || null;
+    var b = felder.lieferung || null;
+    return {
+      bereich: bereich,
+      status: "neu",
+      name: felder.name || null,
+      telefon: felder.telefon || null,
+      wunschtermin: felder.termin || null,
+      preis_eur: (typeof felder.preis === "number") ? felder.preis : null,
+      abhol_label: a ? a.label : null,
+      abhol_lat: a ? a.lat : null,
+      abhol_lon: a ? a.lon : null,
+      abhol_etage: a && typeof a.floors === "number" ? a.floors : null,
+      abhol_aufzug: a ? !!a.elevator : null,
+      liefer_label: b ? b.label : null,
+      liefer_lat: b ? b.lat : null,
+      liefer_lon: b ? b.lon : null,
+      liefer_etage: b && typeof b.floors === "number" ? b.floors : null,
+      liefer_aufzug: b ? !!b.elevator : null,
+      volumen_m3: (typeof felder.volumen === "number") ? Math.round(felder.volumen * 1000) / 1000 : null,
+      gewicht_kg: (typeof felder.gewicht === "number") ? Math.round(felder.gewicht * 10) / 10 : null,
+      daten: felder.daten || {}
+    };
   }
 
   function breakdownHtml(lines, total) {
@@ -1240,8 +1314,30 @@ var CONFIG = {
           helperNeeded: form.querySelector('input[name="' + prefix + '-helper"]:checked').value === "ja",
           customerHelps: document.getElementById(prefix + "-self-help").checked,
           date: date,
-          name: document.getElementById(prefix + "-name").value.trim()
+          name: document.getElementById(prefix + "-name").value.trim(),
+          phone: document.getElementById(prefix + "-phone").value.trim()
         };
+
+        // Datensatz für den Adminbereich – "result" kommt später dazu.
+        function anfrageFuer(result, hinweis) {
+          return anfrageDatensatz(richtung.id === "rueck" ? "beiladung_rueck" : "beiladung_hin", {
+            name: data.name, telefon: data.phone, termin: data.date,
+            preis: result && result.ok ? result.total : null,
+            abholung: data.pickup, lieferung: data.delivery,
+            volumen: result ? result.volumeM3 : null,
+            gewicht: result ? result.weightKg : null,
+            daten: {
+              richtung: richtung.id,
+              gegenstaende: data.items,
+              traegerGewuenscht: data.helperNeeded,
+              kundeHilftMit: data.customerHelps,
+              modell: result ? result.model : null,
+              abrechnungKm: result ? result.chargeableKm : null,
+              volumenAnteil: result ? result.volumeShare : null,
+              hinweis: hinweis || null
+            }
+          });
+        }
 
         // Lieferziel-Plausibilität: nur das Zielgebiet bekommt einen Sofort-Preis
         if (haversineKm(data.delivery, richtung.ziel) > CONFIG.deliveryMaxKmFromBerlin) {
@@ -1252,7 +1348,7 @@ var CONFIG = {
             ' und Umgebung. Unser Sofort-Preis gilt für Lieferungen nach ' + richtung.zielName + ' (+' +
             CONFIG.deliveryMaxKmFromBerlin +
             ' km). Gerne machen wir Ihnen ein individuelles Angebot!</p>' +
-            whatsappBlock(waFar), true);
+            whatsappBlock(waFar, anfrageFuer(null, "Lieferadresse außerhalb des Zielgebiets")), true);
           return;
         }
 
@@ -1292,7 +1388,8 @@ var CONFIG = {
             var waBig = transportWaMessage(data, result, { estimated: estimated }, richtung);
             showResult(resultEl,
               '<h3 class="result-title">Bitte individuell anfragen</h3>' +
-              '<p class="result-error-msg">' + esc(msg) + '</p>' + whatsappBlock(waBig), true);
+              '<p class="result-error-msg">' + esc(msg) + '</p>' +
+              whatsappBlock(waBig, anfrageFuer(result, "Kein Online-Preis: " + result.reason)), true);
             return;
           }
 
@@ -1329,7 +1426,7 @@ var CONFIG = {
             '<p class="result-sub">Beiladung ' + esc(pickup.label) + ' → ' + esc(delivery.label) + '</p>' +
             badgesHtml(badges) +
             breakdownHtml(lines, fmtEur0(result.total)) +
-            whatsappBlock(wa) +
+            whatsappBlock(wa, anfrageFuer(result, null)) +
             legalNote(), false);
         });
       }).catch(function (err) {
@@ -1372,6 +1469,7 @@ var CONFIG = {
 
   function initSonderfahrt() {
     var form = document.getElementById("form-sonderfahrt");
+    if (!form) return;
     var resultEl = document.getElementById("s-result");
     var pickupInput = document.getElementById("s-pickup-address");
     var destInput = document.getElementById("s-dest-address");
@@ -1427,7 +1525,8 @@ var CONFIG = {
           helperNeeded: document.getElementById("s-helper").checked,
           pickupFloor: intValue(document.getElementById("s-pickup-floor")),
           destFloor: intValue(document.getElementById("s-dest-floor")),
-          name: document.getElementById("s-name").value.trim()
+          name: document.getElementById("s-name").value.trim(),
+          phone: document.getElementById("s-phone").value.trim()
         };
 
         return Promise.all([
@@ -1468,12 +1567,24 @@ var CONFIG = {
           if (estimated) badges.push({ text: "Entfernung geschätzt (Luftlinie)", warn: true });
 
           var wa = sonderfahrtWaMessage(data, result, { estimated: estimated });
+          var anfrage = anfrageDatensatz("sonderfahrt", {
+            name: data.name, telefon: data.phone, termin: data.date, preis: result.total,
+            abholung: { label: pickup.label, lat: pickup.lat, lon: pickup.lon, floors: data.pickupFloor },
+            lieferung: { label: dest.label, lat: dest.lat, lon: dest.lon, floors: data.destFloor },
+            daten: {
+              uhrzeit: data.time,
+              ladung: data.desc,
+              traegerGewuenscht: data.helperNeeded,
+              gesamtKm: result.totalKm,
+              gesamtStunden: result.totalHours
+            }
+          });
           showResult(resultEl,
             '<h3 class="result-title">Ihr Preis: ' + fmtEur0(result.total) + '</h3>' +
             '<p class="result-sub">Sonderfahrt ' + esc(pickup.label) + ' → ' + esc(dest.label) + '</p>' +
             badgesHtml(badges) +
             breakdownHtml(lines, fmtEur0(result.total)) +
-            whatsappBlock(wa) +
+            whatsappBlock(wa, anfrage) +
             legalNote(), false);
         });
       }).catch(function (err) {
@@ -1513,6 +1624,7 @@ var CONFIG = {
 
   function initPutzservice() {
     var form = document.getElementById("form-putzservice");
+    if (!form) return;
     var resultEl = document.getElementById("p-result");
     var addressInput = document.getElementById("p-address");
     var serviceSelect = document.getElementById("p-service");
@@ -1566,8 +1678,24 @@ var CONFIG = {
           hours: hours,
           staff: staff,
           date: date,
-          name: document.getElementById("p-name").value.trim()
+          name: document.getElementById("p-name").value.trim(),
+          phone: document.getElementById("p-phone").value.trim()
         };
+
+        function putzAnfrage(result, hinweis) {
+          return anfrageDatensatz("putzservice", {
+            name: data.name, telefon: data.phone, termin: data.date,
+            preis: result && result.ok ? result.total : null,
+            abholung: { label: place.label, lat: place.lat, lon: place.lon },
+            daten: {
+              leistung: data.service,
+              stunden: data.hours,
+              kraefte: data.staff,
+              anfahrtEur: result ? result.travelFee : null,
+              hinweis: hinweis || null
+            }
+          });
+        }
 
         var areaKm = haversineKm(place, CONFIG.cleaningAreaCenter);
         var travelKm = haversineKm(CONFIG.cleaningBase, place) * CONFIG.roadFactor;
@@ -1580,7 +1708,7 @@ var CONFIG = {
             '<p class="result-error-msg">Diese Adresse liegt außerhalb unseres Einsatzgebiets ' +
             '(Stuttgart + ' + CONFIG.cleaningRadiusKm + ' km). Fragen Sie gerne trotzdem an – ' +
             'vielleicht finden wir eine Lösung!</p>' +
-            whatsappBlock(waOut), true);
+            whatsappBlock(waOut, putzAnfrage(null, "Außerhalb des Einsatzgebiets")), true);
           return;
         }
 
@@ -1602,7 +1730,7 @@ var CONFIG = {
           '<p class="result-sub">' + esc(data.service) + ' – ' + esc(place.label) + '</p>' +
           badgesHtml(badges) +
           breakdownHtml(lines, fmtEur0(result.total)) +
-          whatsappBlock(wa) +
+          whatsappBlock(wa, putzAnfrage(result, null)) +
           legalNote(), false);
       }).catch(function (err) {
         if (!err || !err.handled) {
@@ -1676,12 +1804,25 @@ var CONFIG = {
     schwergutzuschlag: heavyItemSurchargeEur,
     modellwahl: chooseKmModel,
     mengenrabatt: mitMengenrabatt,
-    luftlinie: haversineKm
+    luftlinie: haversineKm,
+    // Bausteine, die der Adminbereich (admin.js) mitbenutzt
+    hilfen: {
+      esc: esc,
+      fmtEur: fmtEur,
+      fmtEur0: fmtEur0,
+      fmtKm: fmtKm,
+      fmtNum: fmtNum,
+      fmtDateDe: fmtDateDe,
+      autocomplete: attachAutocomplete,
+      geocode: geocodeQuery,
+      ladezeitStunden: handlingHours
+    }
   };
 
   document.addEventListener("DOMContentLoaded", function () {
     fillConfigPlaceholders();
     initTabs();
+    initAnfrageSpeicher();
     initBeiladung("t", RICHTUNGEN.hin);
     initBeiladung("r", RICHTUNGEN.rueck);
     initSonderfahrt();

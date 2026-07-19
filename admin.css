@@ -1,0 +1,338 @@
+/* ════════════════════════════════════════════════════════════════
+   Gaus Dienstleistungen – Interner Bereich
+   Ergänzt style.css (Farben und Grundformen kommen von dort)
+   ════════════════════════════════════════════════════════════════ */
+
+.admin-body .wrap { max-width: 900px; }
+.admin-main { padding-bottom: 40px; }
+
+/* ── Anmeldung ──────────────────────────────────────── */
+
+.login-screen {
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px 16px;
+}
+.login-card { width: 100%; max-width: 380px; }
+.login-card h1 { margin: 0 0 2px; font-size: 22px; color: var(--blue-900); }
+.login-sub { margin: 0 0 20px; color: var(--ink-soft); font-size: 14px; }
+.login-card .btn-primary { width: 100%; }
+.login-hint {
+  margin: 16px 0 0;
+  padding: 12px;
+  background: var(--blue-100);
+  border-radius: 8px;
+  font-size: 13.5px;
+  color: var(--blue-900);
+}
+.login-hint code { background: rgba(255, 255, 255, .7); padding: 1px 5px; border-radius: 4px; }
+.login-back { margin: 16px 0 0; text-align: center; font-size: 14px; }
+.login-back a, .footer-links a { color: var(--blue-600); }
+
+/* ── Kopfzeile ──────────────────────────────────────── */
+
+.admin-header { padding: 16px 0; }
+.admin-topline {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+.admin-header .brand-name { margin: 0; }
+.admin-header .brand-tag { margin: 0; font-size: 13px; opacity: .8; }
+
+.btn-ghost {
+  font: inherit;
+  font-size: 13.5px;
+  font-weight: 600;
+  padding: 7px 12px;
+  border-radius: 8px;
+  border: 1px solid var(--line);
+  background: var(--card);
+  color: var(--blue-700);
+  cursor: pointer;
+  text-decoration: none;
+  display: inline-block;
+}
+.btn-ghost:hover { background: var(--blue-100); }
+.admin-header .btn-ghost {
+  background: rgba(255, 255, 255, .14);
+  border-color: rgba(255, 255, 255, .35);
+  color: #fff;
+}
+.admin-header .btn-ghost:hover { background: rgba(255, 255, 255, .24); }
+
+.btn-small { padding: 8px 14px; font-size: 14px; }
+.btn-loeschen { color: var(--error); border-color: #eecdc8; }
+.btn-loeschen:hover { background: var(--error-bg); }
+
+/* ── Leisten, Filter ────────────────────────────────── */
+
+.admin-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 4px;
+}
+.admin-bar h2 { margin: 0; }
+
+.filter-row {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 0 14px;
+  margin: 14px 0 6px;
+}
+.admin-summary { margin: 6px 0 14px; font-size: 13.5px; color: var(--ink-soft); }
+.admin-leer {
+  margin: 0;
+  padding: 22px 16px;
+  text-align: center;
+  color: var(--ink-soft);
+  background: var(--bg);
+  border-radius: 10px;
+  font-size: 14.5px;
+}
+.admin-fehler { color: var(--error); background: var(--error-bg); }
+
+/* ── Anfragenkarten ─────────────────────────────────── */
+
+.anfragen-liste { display: grid; gap: 12px; }
+
+.anfrage-karte {
+  border: 1px solid var(--line);
+  border-left: 4px solid var(--line);
+  border-radius: 10px;
+  padding: 14px;
+  background: var(--card);
+}
+.anfrage-karte.status-neu { border-left-color: var(--amber); }
+.anfrage-karte.status-angenommen { border-left-color: var(--blue-600); }
+.anfrage-karte.status-erledigt { border-left-color: var(--ok); }
+.anfrage-karte.status-abgelehnt { border-left-color: #b9c3cc; opacity: .72; }
+
+.ak-kopf {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 12px;
+  margin-bottom: 10px;
+}
+.ak-titel { margin: 0; font-weight: 700; font-size: 15.5px; color: var(--blue-900); }
+.ak-zeit { margin: 0; font-size: 12.5px; color: var(--ink-soft); }
+.ak-rechts { text-align: right; display: grid; gap: 4px; justify-items: end; }
+.ak-preis { font-weight: 700; font-size: 17px; color: var(--blue-700); white-space: nowrap; }
+.preis-offen { font-size: 13px; font-weight: 600; color: var(--ink-soft); }
+.ak-klein { font-size: 12.5px; color: var(--ink-soft); }
+
+.badge-neu { color: #8a5a00; background: #fdf3dd; }
+.badge-angenommen { color: var(--blue-700); background: var(--blue-100); }
+.badge-erledigt { color: var(--ok); background: #e6f4ec; }
+.badge-abgelehnt { color: var(--ink-soft); background: #eceff2; }
+
+.ak-daten {
+  display: grid;
+  grid-template-columns: 108px 1fr;
+  gap: 3px 10px;
+  margin: 0 0 10px;
+  font-size: 14px;
+}
+.ak-daten dt { color: var(--ink-soft); }
+.ak-daten dd { margin: 0; }
+.ak-daten a { color: var(--blue-600); }
+
+.stueck-liste {
+  margin: 0 0 10px;
+  padding: 8px 10px 8px 26px;
+  background: var(--bg);
+  border-radius: 8px;
+  font-size: 13.5px;
+  color: var(--ink-soft);
+}
+
+.ak-notiz { margin-bottom: 10px; }
+.ak-notiz label { font-size: 12.5px; }
+.ak-notiz textarea { min-height: 42px; }
+
+.ak-aktionen { display: flex; flex-wrap: wrap; gap: 8px; }
+
+/* ── Auswahl für die Tour ───────────────────────────── */
+
+.auswahl-liste {
+  display: grid;
+  gap: 8px;
+  margin: 10px 0 16px;
+  max-height: 380px;
+  overflow-y: auto;
+}
+.auswahl-zeile {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  align-items: start;
+  gap: 10px;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  font-weight: 400;
+  cursor: pointer;
+  margin: 0;
+}
+.auswahl-zeile:hover { background: var(--blue-100); }
+.auswahl-zeile input { margin-top: 3px; width: 18px; height: 18px; accent-color: var(--blue-600); }
+.az-text { font-size: 14px; line-height: 1.4; min-width: 0; }
+.az-preis { font-weight: 700; color: var(--blue-700); white-space: nowrap; font-size: 14px; }
+
+.planer-actions { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.planer-actions .btn-primary { margin: 0; }
+
+/* ── Tour: Zusammenfassung ──────────────────────────── */
+
+.tour-summary {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  gap: 10px;
+  margin: 14px 0;
+}
+.ts-kachel {
+  padding: 12px;
+  background: var(--blue-100);
+  border-radius: 10px;
+  text-align: center;
+}
+.ts-kachel.ts-warn { background: var(--error-bg); }
+.ts-wert {
+  display: block;
+  font-size: 19px;
+  font-weight: 700;
+  color: var(--blue-900);
+  font-variant-numeric: tabular-nums;
+}
+.ts-kachel.ts-warn .ts-wert { color: var(--error); }
+.ts-label { display: block; font-size: 12.5px; color: var(--ink-soft); margin-top: 2px; }
+
+.tour-warnung {
+  margin: 0 0 8px;
+  padding: 10px 12px;
+  background: #fdf3dd;
+  border-left: 3px solid var(--amber);
+  border-radius: 6px;
+  font-size: 14px;
+  color: #7a5200;
+}
+
+/* ── Tour: Stoppliste ───────────────────────────────── */
+
+.tour-stopps { list-style: none; margin: 16px 0; padding: 0; display: grid; gap: 8px; }
+
+.stopp {
+  display: grid;
+  grid-template-columns: 34px 1fr auto;
+  gap: 10px;
+  align-items: start;
+  padding: 11px 12px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--card);
+}
+.stopp.art-abholung { border-left: 4px solid var(--amber); }
+.stopp.art-lieferung { border-left: 4px solid var(--ok); }
+.stopp.art-eigen { border-left: 4px solid var(--blue-600); }
+.stopp.stopp-fest { background: var(--bg); border-style: dashed; }
+
+.st-nummer {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 26px;
+  padding: 0 4px;
+  border-radius: 7px;
+  background: var(--blue-900);
+  color: #fff;
+  font-size: 12.5px;
+  font-weight: 700;
+}
+.stopp-fest .st-nummer { background: var(--ink-soft); }
+
+.st-inhalt { min-width: 0; }
+.st-kopf { margin: 0 0 1px; display: flex; flex-wrap: wrap; gap: 8px; align-items: baseline; }
+.st-art { font-weight: 700; font-size: 14px; color: var(--blue-900); }
+.st-kunde { font-size: 14px; color: var(--ink-soft); }
+.st-zeit {
+  margin-left: auto;
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+  font-size: 14px;
+  color: var(--blue-700);
+}
+.st-adresse { margin: 0; font-size: 14px; word-break: break-word; }
+.st-details { margin: 2px 0 0; font-size: 12.5px; color: var(--ink-soft); }
+.st-details a { color: var(--blue-600); }
+.st-fuss {
+  margin: 5px 0 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  font-size: 12.5px;
+  color: var(--ink-soft);
+}
+.st-ladung { margin-left: auto; }
+
+.st-knoepfe { display: grid; gap: 4px; }
+.btn-mini {
+  font: inherit;
+  font-size: 12px;
+  line-height: 1;
+  padding: 6px 8px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--card);
+  color: var(--blue-700);
+  cursor: pointer;
+}
+.btn-mini:hover:not(:disabled) { background: var(--blue-100); }
+.btn-mini:disabled { opacity: .35; cursor: default; }
+.btn-mini-weg { color: var(--error); }
+.btn-mini-weg:hover { background: var(--error-bg); }
+
+/* ── Stopp hinzufügen / Tour speichern ──────────────── */
+
+.stopp-add, .tour-save {
+  margin-top: 16px;
+  padding: 14px;
+  background: var(--bg);
+  border-radius: 10px;
+}
+.stopp-add { display: grid; grid-template-columns: 1fr; gap: 0 12px; align-items: end; }
+.stopp-add .field { margin-bottom: 10px; }
+.stopp-add button { justify-self: start; }
+.tour-save .btn-primary { margin-top: 4px; }
+
+.tour-kurz {
+  margin: 8px 0;
+  padding-left: 20px;
+  font-size: 13.5px;
+  color: var(--ink-soft);
+  display: grid;
+  gap: 2px;
+}
+.tour-kurz strong { color: var(--blue-700); }
+
+/* ── Selbsttests ────────────────────────────────────── */
+
+.selbsttest {
+  padding: 12px 16px;
+  font-size: 13.5px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+}
+.selbsttest ul { margin: 6px 0 0; padding-left: 20px; }
+.selbsttest-ok { background: #e6f4ec; color: #14532d; }
+.selbsttest-fehler { background: var(--error-bg); color: var(--error); }
+
+/* ── Breitere Bildschirme ───────────────────────────── */
+
+@media (min-width: 720px) {
+  .stopp-add { grid-template-columns: 2fr 1fr 110px auto; }
+  .stopp-add .field { margin-bottom: 0; }
+}

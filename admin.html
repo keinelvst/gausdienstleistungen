@@ -1,0 +1,221 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="robots" content="noindex, nofollow">
+  <title>Interner Bereich – Gaus Dienstleistungen</title>
+  <link rel="stylesheet" href="style.css">
+  <link rel="stylesheet" href="admin.css">
+</head>
+<body class="admin-body">
+
+<!-- ══ Anmeldung ══════════════════════════════════════════════════ -->
+<div id="login-screen" class="login-screen" hidden>
+  <form class="card login-card" id="login-form">
+    <h1>Interner Bereich</h1>
+    <p class="login-sub">Anfragen und Tourenplanung</p>
+
+    <div class="field">
+      <label for="login-email">E-Mail</label>
+      <input type="email" id="login-email" autocomplete="username" required>
+    </div>
+    <div class="field">
+      <label for="login-password">Passwort</label>
+      <input type="password" id="login-password" autocomplete="current-password" required>
+    </div>
+
+    <button type="submit" class="btn-primary" id="login-submit">
+      <span class="btn-label">Anmelden</span>
+      <span class="btn-spinner" hidden aria-hidden="true"></span>
+    </button>
+    <p class="form-error" id="login-error" role="alert" hidden></p>
+    <p class="login-hint" id="login-demo-hint" hidden>
+      Es ist noch keine Datenbank eingerichtet – du kannst den Bereich ohne Anmeldung
+      im <strong>Übungsmodus</strong> ansehen. Anleitung: <code>SUPABASE-EINRICHTUNG.md</code>
+    </p>
+    <p class="login-back"><a href="index.html">← Zurück zur Website</a></p>
+  </form>
+</div>
+
+<!-- ══ Adminbereich ═══════════════════════════════════════════════ -->
+<div id="admin-screen" hidden>
+
+  <header class="site-header admin-header">
+    <div class="wrap">
+      <div class="admin-topline">
+        <div>
+          <p class="brand-name">Interner Bereich</p>
+          <p class="brand-tag" id="admin-user"></p>
+        </div>
+        <button type="button" class="btn-ghost" id="logout-btn">Abmelden</button>
+      </div>
+    </div>
+  </header>
+
+  <nav class="tabs" aria-label="Bereiche">
+    <div class="wrap tabs-row">
+      <button class="tab is-active" data-tab="panel-anfragen" type="button">Anfragen</button>
+      <button class="tab" data-tab="panel-planer" type="button">Tourenplaner</button>
+      <button class="tab" data-tab="panel-touren" type="button">Gespeicherte Touren</button>
+    </div>
+  </nav>
+
+  <main class="wrap admin-main">
+
+    <!-- ── Anfragen ──────────────────────────────────────────── -->
+    <section id="panel-anfragen" class="panel is-active">
+      <div class="card">
+        <div class="admin-bar">
+          <h2>Anfragen</h2>
+          <button type="button" class="btn-secondary btn-small" id="anfragen-reload">Aktualisieren</button>
+        </div>
+
+        <div class="filter-row">
+          <div class="field">
+            <label for="f-status">Status</label>
+            <select id="f-status">
+              <option value="offen">Offen (neu + angenommen)</option>
+              <option value="alle">Alle</option>
+              <option value="neu">Nur neu</option>
+              <option value="angenommen">Nur angenommen</option>
+              <option value="erledigt">Nur erledigt</option>
+              <option value="abgelehnt">Nur abgelehnt</option>
+            </select>
+          </div>
+          <div class="field">
+            <label for="f-bereich">Bereich</label>
+            <select id="f-bereich">
+              <option value="alle">Alle Bereiche</option>
+              <option value="beiladung_hin">Beiladung → Berlin</option>
+              <option value="beiladung_rueck">Beiladung → Stuttgart</option>
+              <option value="sonderfahrt">Sonderfahrt</option>
+              <option value="putzservice">Putzservice</option>
+            </select>
+          </div>
+          <div class="field">
+            <label for="f-suche">Suche</label>
+            <input type="text" id="f-suche" placeholder="Name, Ort, PLZ …">
+          </div>
+        </div>
+
+        <p class="admin-summary" id="anfragen-summary"></p>
+        <div id="anfragen-liste" class="anfragen-liste"></div>
+      </div>
+    </section>
+
+    <!-- ── Tourenplaner ──────────────────────────────────────── -->
+    <section id="panel-planer" class="panel">
+      <div class="card">
+        <h2>1. Anfragen für die Tour auswählen</h2>
+        <p class="section-hint">
+          Es werden nur Transportanfragen angezeigt, die noch nicht erledigt sind.
+          Abholung und Lieferung derselben Anfrage bleiben immer in der richtigen Reihenfolge.
+        </p>
+
+        <div class="filter-row">
+          <div class="field">
+            <label for="planer-richtung">Fahrtrichtung</label>
+            <select id="planer-richtung">
+              <option value="beiladung_hin">Stuttgart → Berlin</option>
+              <option value="beiladung_rueck">Berlin → Stuttgart</option>
+              <option value="sonderfahrt">Sonderfahrten (Raum Stuttgart)</option>
+            </select>
+          </div>
+          <div class="field">
+            <label for="planer-datum">Tourdatum</label>
+            <input type="date" id="planer-datum">
+          </div>
+          <div class="field">
+            <label for="planer-maxstunden">Höchstfahrzeit (Std.)</label>
+            <input type="number" id="planer-maxstunden" min="1" max="24" step="0.5">
+            <p class="field-hint">Reine Zeit am Steuer. Be-/Entladen und
+               Pause kommen obendrauf und werden getrennt angezeigt.</p>
+          </div>
+        </div>
+
+        <div id="planer-auswahl" class="auswahl-liste"></div>
+
+        <div class="planer-actions">
+          <button type="button" class="btn-primary" id="planer-berechnen">
+            <span class="btn-label">Route zusammenstellen</span>
+            <span class="btn-spinner" hidden aria-hidden="true"></span>
+          </button>
+          <button type="button" class="btn-secondary btn-small" id="planer-alle">Alle auswählen</button>
+          <button type="button" class="btn-secondary btn-small" id="planer-keine">Auswahl leeren</button>
+        </div>
+        <p class="form-error" id="planer-error" role="alert" hidden></p>
+      </div>
+
+      <div class="card" id="tour-card" hidden>
+        <div class="admin-bar">
+          <h2>2. Route prüfen und anpassen</h2>
+          <button type="button" class="btn-secondary btn-small" id="tour-neu-optimieren">Neu optimieren</button>
+        </div>
+
+        <div id="tour-summary" class="tour-summary" role="status" aria-live="polite"></div>
+        <div id="tour-warnungen"></div>
+
+        <ol id="tour-stopps" class="tour-stopps"></ol>
+
+        <div class="stopp-add">
+          <div class="field">
+            <label for="stopp-adresse">Eigenen Stopp einfügen <span class="opt">(z. B. Tanken, Pause, Privattermin)</span></label>
+            <input type="text" id="stopp-adresse" placeholder="Adresse eingeben …" autocomplete="off">
+          </div>
+          <div class="field">
+            <label for="stopp-name">Bezeichnung</label>
+            <input type="text" id="stopp-name" placeholder="z. B. Tankstelle">
+          </div>
+          <div class="field">
+            <label for="stopp-dauer">Dauer (Min.)</label>
+            <input type="number" id="stopp-dauer" min="0" max="480" step="5" value="15">
+          </div>
+          <button type="button" class="btn-secondary btn-small" id="stopp-add-btn">Stopp hinzufügen</button>
+        </div>
+        <p class="form-error" id="stopp-error" role="alert" hidden></p>
+
+        <div class="tour-save">
+          <div class="field">
+            <label for="tour-name">Name der Tour</label>
+            <input type="text" id="tour-name" placeholder="z. B. Berlin-Tour 24.07.">
+          </div>
+          <div class="field">
+            <label for="tour-notiz">Notiz <span class="opt">(optional)</span></label>
+            <textarea id="tour-notiz" rows="2" placeholder="Besonderheiten, Absprachen …"></textarea>
+          </div>
+          <button type="button" class="btn-primary" id="tour-speichern">
+            <span class="btn-label">Tour speichern</span>
+            <span class="btn-spinner" hidden aria-hidden="true"></span>
+          </button>
+          <p class="admin-summary" id="tour-save-info" role="status" aria-live="polite"></p>
+        </div>
+      </div>
+    </section>
+
+    <!-- ── Gespeicherte Touren ───────────────────────────────── -->
+    <section id="panel-touren" class="panel">
+      <div class="card">
+        <div class="admin-bar">
+          <h2>Gespeicherte Touren</h2>
+          <button type="button" class="btn-secondary btn-small" id="touren-reload">Aktualisieren</button>
+        </div>
+        <div id="touren-liste" class="anfragen-liste"></div>
+      </div>
+    </section>
+
+  </main>
+
+  <footer class="site-footer">
+    <div class="wrap">
+      <p>Interner Bereich – nicht für Kunden bestimmt.</p>
+      <p class="footer-links"><a href="index.html">← Zurück zur Website</a></p>
+    </div>
+  </footer>
+</div>
+
+<script src="app.js"></script>
+<script src="db.js"></script>
+<script src="admin.js"></script>
+</body>
+</html>

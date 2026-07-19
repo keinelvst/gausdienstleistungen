@@ -23,10 +23,14 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      # OpenRouteService-Key aus dem verschlüsselten GitHub-Secret einsetzen
-      - name: API-Key einsetzen
+      # Schlüssel aus den verschlüsselten GitHub-Secrets einsetzen.
+      # Fehlt ein Secret, bleibt der Wert leer und die Seite nutzt ihre
+      # eingebauten Ersatzwerte (geschätzte Entfernungen bzw. Übungsmodus).
+      - name: API-Schlüssel einsetzen
         run: |
           sed -i 's|orsApiKey: ""|orsApiKey: "${{ secrets.ORS_API_KEY }}"|' app.js
+          sed -i 's|supabaseUrl: ""|supabaseUrl: "${{ secrets.SUPABASE_URL }}"|' app.js
+          sed -i 's|supabaseAnonKey: ""|supabaseAnonKey: "${{ secrets.SUPABASE_ANON_KEY }}"|' app.js
 
       - uses: actions/configure-pages@v5
 
