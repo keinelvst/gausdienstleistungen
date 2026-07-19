@@ -393,10 +393,14 @@ var CONFIG = {
     var handlingH = handlingHours();
     var handlingSelfCost = handlingH * CONFIG.fahrerStundensatzEur;
 
-    // Beifahrer: Ladezeit voll + Fahrzeit anteilig nach Ladevolumen
-    // (er sitzt die Tour ja mit im Auto, geteilt durch alle Kunden der Fahrt)
-    var helperSelfCost = (input.helperNeeded && !input.customerHelps)
-      ? handlingH * CONFIG.beifahrerStundensatzEur +
+    // Beifahrer: Ein Träger wird oft nur an EINER der beiden Adressen
+    // gebraucht (z. B. oben im 3. Stock, unten aber nicht). Bezahlt wird
+    // deshalb nur die Ladezeit der Stopps, an denen er wirklich anpackt.
+    // Die Fahrzeit zählt weiter anteilig: Er sitzt die ganze Tour mit im
+    // Auto, unterwegs aussteigen lassen geht nicht.
+    var traegerStopps = (input.traegerAbholung ? 1 : 0) + (input.traegerLieferung ? 1 : 0);
+    var helperSelfCost = (traegerStopps > 0 && !input.customerHelps)
+      ? (CONFIG.ladezeitProStoppMin / 60) * traegerStopps * CONFIG.beifahrerStundensatzEur +
         hours * CONFIG.beifahrerStundensatzEur * share
       : 0;
 
@@ -421,6 +425,7 @@ var CONFIG = {
       dieselPricePerL: input.dieselPricePerL,
       mitfahrtKm: mitfahrtKm,
       blockierteKm: blockierteKm,
+      traegerStopps: traegerStopps,
       // Kundensicht: Zeilen inkl. anteiligem Gewinnaufschlag
       fahrtCost: applyMargin(vehicleCost + driverDriveCost),
       platzCost: applyMargin(platzCost),
@@ -670,6 +675,29 @@ var CONFIG = {
     CONFIG.platzblockadeFaktor = 0;
     check("Faktor 0 => kein Stellplatz-Zuschlag", teilstrecke(300).platzCost, 0);
     CONFIG.platzblockadeFaktor = faktorVorher;
+
+    // ── Träger nur an einer der beiden Adressen ──
+    function mitTraeger(ab, lief, hilftSelbst) {
+      return calculateBerlinPrice(berlinInput({
+        helperNeeded: ab || lief, traegerAbholung: ab, traegerLieferung: lief,
+        customerHelps: !!hilftSelbst
+      }));
+    }
+    var ohneT  = mitTraeger(false, false);
+    var beides = mitTraeger(true, true);
+    var nurAb  = mitTraeger(true, false);
+    var nurLf  = mitTraeger(false, true);
+
+    check("Ohne Träger: 0 € Beifahrer", ohneT.helperCost, 0);
+    checkTrue("Träger an beiden Adressen kostet am meisten",
+      beides.helperCost > nurAb.helperCost && nurAb.helperCost > 0);
+    check("Nur Abholen und nur Liefern kosten gleich viel", nurAb.helperCost - nurLf.helperCost, 0);
+    // Unterschied = die eingesparte Ladezeit eines Stopps: 22,5 Min. × 30 €/h
+    check("Ein Stopp weniger spart 11,25 €", beides.helperCost - nurAb.helperCost, 11.25);
+    check("traegerStopps zählt richtig (beides)", beides.traegerStopps, 2);
+    check("traegerStopps zählt richtig (nur einer)", nurLf.traegerStopps, 1);
+    check("Kunde hilft selbst mit => 0 €", mitTraeger(true, true, true).helperCost, 0);
+    checkTrue("Preis mit Träger liegt über dem ohne", beides.total > ohneT.total);
 
     // ── Lieferadressen unterwegs auf der Route ──
     checkTrue("Berlin selbst ist erlaubt",
@@ -1305,8 +1333,13 @@ var CONFIG = {
     if (result && result.ok) {
       lines.push("Gesamt: " + fmtNum(result.volumeM3, 2) + " m³ / " + fmtNum(result.weightKg, 0) + " kg");
     }
-    lines.push("Zweiter Träger: " + (data.helperNeeded
-      ? (data.customerHelps ? "Ja – ich helfe selbst mit" : "Ja") : "Nein"));
+    var wo = [];
+    if (data.traegerAbholung) wo.push("beim Abholen");
+    if (data.traegerLieferung) wo.push("beim Liefern");
+    lines.push("Zweiter Träger: " + (wo.length
+      ? (data.customerHelps ? "Ja (" + wo.join(" und ") + ") – ich helfe selbst mit"
+                            : "Ja – " + wo.join(" und "))
+      : "Nein"));
     if (data.date) lines.push("Wunschtermin: " + fmtDateDe(data.date));
     lines.push("──────────────");
     if (result && result.ok) {
@@ -1351,13 +1384,14 @@ var CONFIG = {
       addItemRow(prefix);
     });
 
-    // "Ich helfe selbst mit" nur zeigen, wenn ein Träger benötigt wird.
-    // Auch initial und bei pageshow synchronisieren – Browser wie Firefox
-    // stellen Formularwerte nach einem Reload ohne change-Event wieder her.
-    var selfHelpWrap = document.getElementById(prefix + "-self-help-wrap");
+    // Die Träger-Details ("wo wird getragen?" und "ich helfe selbst mit")
+    // nur zeigen, wenn ein Träger benötigt wird. Auch initial und bei
+    // pageshow synchronisieren – Browser wie Firefox stellen Formularwerte
+    // nach einem Reload ohne change-Event wieder her.
+    var helperDetails = document.getElementById(prefix + "-helper-details");
     function syncSelfHelp() {
       var checked = form.querySelector('input[name="' + prefix + '-helper"]:checked');
-      selfHelpWrap.hidden = !checked || checked.value !== "ja";
+      helperDetails.hidden = !checked || checked.value !== "ja";
     }
     form.querySelectorAll('input[name="' + prefix + '-helper"]').forEach(function (r) {
       r.addEventListener("change", syncSelfHelp);
@@ -1391,8 +1425,18 @@ var CONFIG = {
       if (!pickupInput.value.trim()) setFieldError(pickupInput, "Bitte Abholadresse angeben.");
       if (!deliveryInput.value.trim()) setFieldError(deliveryInput, "Bitte Lieferadresse angeben.");
 
+      // Wenn ein Träger gewünscht ist, muss auch stehen, wo er anpacken soll.
+      var willTraeger = form.querySelector('input[name="' + prefix + '-helper"]:checked').value === "ja";
+      var traegerAb = willTraeger && document.getElementById(prefix + "-helper-pickup").checked;
+      var traegerLief = willTraeger && document.getElementById(prefix + "-helper-delivery").checked;
+      var traegerFehlt = willTraeger && !traegerAb && !traegerLief;
+      if (traegerFehlt) {
+        showFormError(prefix + "-helper-error",
+          "Bitte ankreuzen, wo ein Träger gebraucht wird – beim Abholen, beim Liefern oder bei beidem.");
+      }
+
       if (pickupFloor === null || deliveryFloor === null || items === null || date === null ||
-          !pickupInput.value.trim() || !deliveryInput.value.trim()) {
+          traegerFehlt || !pickupInput.value.trim() || !deliveryInput.value.trim()) {
         showFormError(prefix + "-form-error", "Bitte prüfen Sie die rot markierten Felder.");
         return;
       }
@@ -1415,7 +1459,9 @@ var CONFIG = {
           delivery: { lat: delivery.lat, lon: delivery.lon, label: delivery.label,
                       floors: deliveryFloor, elevator: document.getElementById(prefix + "-delivery-elevator").checked },
           items: items,
-          helperNeeded: form.querySelector('input[name="' + prefix + '-helper"]:checked').value === "ja",
+          helperNeeded: willTraeger,
+          traegerAbholung: traegerAb,
+          traegerLieferung: traegerLief,
           customerHelps: document.getElementById(prefix + "-self-help").checked,
           date: date,
           name: document.getElementById(prefix + "-name").value.trim(),
@@ -1434,6 +1480,8 @@ var CONFIG = {
               richtung: richtung.id,
               gegenstaende: data.items,
               traegerGewuenscht: data.helperNeeded,
+              traegerAbholung: data.traegerAbholung,
+              traegerLieferung: data.traegerLieferung,
               kundeHilftMit: data.customerHelps,
               modell: result ? result.model : null,
               abrechnungKm: result ? result.chargeableKm : null,
@@ -1477,6 +1525,8 @@ var CONFIG = {
             pickup: data.pickup,
             delivery: data.delivery,
             helperNeeded: data.helperNeeded,
+            traegerAbholung: data.traegerAbholung,
+            traegerLieferung: data.traegerLieferung,
             customerHelps: data.customerHelps,
             dieselPricePerL: fuel.price,
             richtung: richtung
@@ -1519,7 +1569,11 @@ var CONFIG = {
             { label: "Etagenzuschlag (Tragen über Treppen)", amount: fmtEur(result.floorCost) },
             { label: "Schwere Gegenstände (" + fmtNum(result.weightKg, 0) + " kg gesamt)",
               amount: fmtEur(result.heavyCost) },
-            { label: "Beifahrer / zweiter Träger", amount: fmtEur(result.helperCost) }
+            { label: "Beifahrer / zweiter Träger" +
+                     (result.traegerStopps === 1
+                       ? " (nur " + (data.traegerAbholung ? "beim Abholen" : "beim Liefern") + ")"
+                       : ""),
+              amount: fmtEur(result.helperCost) }
           ]);
           if (result.minApplied) {
             lines.push({ label: "Mindestauftragswert", amount: fmtEur(Math.max(0, CONFIG.minPriceEur - result.subtotal)) });

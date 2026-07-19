@@ -106,11 +106,27 @@
             <label class="check"><input type="radio" name="t-helper" value="ja"><span>Ja, es muss zu zweit getragen werden</span></label>
           </div>
         </div>
-        <div class="field" id="t-self-help-wrap" hidden>
-          <label class="check">
-            <input type="checkbox" id="t-self-help">
-            <span>Ich packe selbst mit an (kein Aufpreis für den zweiten Träger)</span>
-          </label>
+        <div id="t-helper-details" hidden>
+          <div class="field">
+            <span class="label-like">Wo wird getragen?</span>
+            <p class="field-hint">Oft wird nur an einer der beiden Adressen Hilfe gebraucht –
+               dann zahlen Sie auch nur dafür.</p>
+            <label class="check">
+              <input type="checkbox" id="t-helper-pickup" checked>
+              <span>Beim <em>Abholen</em></span>
+            </label>
+            <label class="check">
+              <input type="checkbox" id="t-helper-delivery" checked>
+              <span>Beim <em>Liefern</em></span>
+            </label>
+            <p class="field-error" id="t-helper-error" role="alert" hidden></p>
+          </div>
+          <div class="field">
+            <label class="check">
+              <input type="checkbox" id="t-self-help">
+              <span>Ich packe selbst mit an (kein Aufpreis für den zweiten Träger)</span>
+            </label>
+          </div>
         </div>
 
         <h2>Ihre Angaben</h2>
@@ -213,11 +229,27 @@
             <label class="check"><input type="radio" name="r-helper" value="ja"><span>Ja, es muss zu zweit getragen werden</span></label>
           </div>
         </div>
-        <div class="field" id="r-self-help-wrap" hidden>
-          <label class="check">
-            <input type="checkbox" id="r-self-help">
-            <span>Ich packe selbst mit an (kein Aufpreis für den zweiten Träger)</span>
-          </label>
+        <div id="r-helper-details" hidden>
+          <div class="field">
+            <span class="label-like">Wo wird getragen?</span>
+            <p class="field-hint">Oft wird nur an einer der beiden Adressen Hilfe gebraucht –
+               dann zahlen Sie auch nur dafür.</p>
+            <label class="check">
+              <input type="checkbox" id="r-helper-pickup" checked>
+              <span>Beim <em>Abholen</em></span>
+            </label>
+            <label class="check">
+              <input type="checkbox" id="r-helper-delivery" checked>
+              <span>Beim <em>Liefern</em></span>
+            </label>
+            <p class="field-error" id="r-helper-error" role="alert" hidden></p>
+          </div>
+          <div class="field">
+            <label class="check">
+              <input type="checkbox" id="r-self-help">
+              <span>Ich packe selbst mit an (kein Aufpreis für den zweiten Träger)</span>
+            </label>
+          </div>
         </div>
 
         <h2>Ihre Angaben</h2>

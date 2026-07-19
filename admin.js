@@ -322,7 +322,7 @@
   // einen Transporter passt, damit die Aufteilung sichtbar wird.
   var BEISPIELE = [
     // ── Stuttgart → Berlin ───────────────────────────────────────────
-    { b: "beiladung_hin", n: "Familie Weber", h: true, t: "+4917010000001", v: 2.4, g: 180, p: 412,
+    { b: "beiladung_hin", n: "Familie Weber", h: "lief", t: "+4917010000001", v: 2.4, g: 180, p: 412,
       a: ["Bahnhofstraße 4, 73728 Esslingen", 48.7404, 9.3068, 3, false],
       l: ["Kastanienallee 12, 10435 Berlin", 52.5385, 13.4244, 0, false] },
     { b: "beiladung_hin", n: "Herr Novak", t: "+4917010000002", v: 1.2, g: 95, p: 268,
@@ -350,7 +350,7 @@
       l: ["Müllerstraße 40, 13353 Berlin", 52.5500, 13.3600, 0, false] },
 
     // ── Berlin → Stuttgart (Rückweg) ─────────────────────────────────
-    { b: "beiladung_rueck", n: "Herr Baumann", h: true, t: "+4917010000009", v: 2.2, g: 170, p: 395,
+    { b: "beiladung_rueck", n: "Herr Baumann", h: "abh", t: "+4917010000009", v: 2.2, g: 170, p: 395,
       a: ["Kantstraße 50, 10625 Berlin", 52.5165, 13.3040, 3, false],
       l: ["Hauptstraße 22, 70563 Stuttgart", 48.7250, 9.1120, 0, false] },
     { b: "beiladung_rueck", n: "Frau Lorenz", t: "+4917010000010", v: 1.5, g: 120, p: 305,
@@ -372,8 +372,15 @@
   ];
 
   function beispielDatensatz(x) {
-    var daten = { beispiel: true, gegenstaende: [],
-                  traegerGewuenscht: !!x.h, kundeHilftMit: false };
+    // x.h: true = Träger an beiden Adressen, "abh" = nur beim Abholen,
+    // "lief" = nur beim Liefern, fehlt = gar kein Träger
+    var daten = {
+      beispiel: true, gegenstaende: [],
+      traegerGewuenscht: !!x.h,
+      traegerAbholung: x.h === true || x.h === "abh",
+      traegerLieferung: x.h === true || x.h === "lief",
+      kundeHilftMit: false
+    };
     for (var k in (x.d || {})) daten[k] = x.d[k];
     if (x.b === "beiladung_rueck") daten.richtung = "rueck";
     else if (x.b === "beiladung_hin") daten.richtung = "hin";
@@ -575,9 +582,12 @@
     //    unter Umständen wegen einer einzigen Sendung.
     // 2. Innerhalb davon die großen zuerst, sie sind am schwersten
     //    unterzubringen.
+    function brauchtTraeger(s) {
+      return (s.beifahrer || s.abholung.beifahrer || s.lieferung.beifahrer) ? 1 : 0;
+    }
     var sortiert = sendungen.slice().sort(function (a, b) {
-      var ba = a.abholung.beifahrer ? 1 : 0;
-      var bb = b.abholung.beifahrer ? 1 : 0;
+      var ba = brauchtTraeger(a);
+      var bb = brauchtTraeger(b);
       if (ba !== bb) return bb - ba;
       return (b.abholung.volumen || 0) - (a.abholung.volumen || 0);
     });
@@ -730,9 +740,16 @@
       var pi = punkte.push({ lat: a.abhol_lat, lon: a.abhol_lon }) - 1;
       var li = punkte.push({ lat: a.liefer_lat, lon: a.liefer_lon }) - 1;
       var vol = Number(a.volumen_m3) || 0;
-      // Beifahrer nötig, wenn der Kunde einen Träger will und NICHT selbst mithilft
+      // Beifahrer nötig, wenn der Kunde einen Träger will und NICHT selbst
+      // mithilft. Seit 19.07.2026 kann das getrennt für Abholung und
+      // Lieferung gelten. Ältere Anfragen kennen nur das eine Merkmal –
+      // für die gilt der Träger dann an beiden Stopps.
       var d = a.daten || {};
-      var braucht = !!(d.traegerGewuenscht && !d.kundeHilftMit);
+      var willTraeger = !!(d.traegerGewuenscht && !d.kundeHilftMit);
+      var hatDetails = (d.traegerAbholung !== undefined || d.traegerLieferung !== undefined);
+      var brauchtAb   = willTraeger && (hatDetails ? !!d.traegerAbholung : true);
+      var brauchtLief = willTraeger && (hatDetails ? !!d.traegerLieferung : true);
+      var braucht = brauchtAb || brauchtLief;
       return {
         preis: Number(a.preis_eur) || 0,
         beifahrer: braucht,
@@ -741,7 +758,7 @@
           label: a.abhol_label, lat: a.abhol_lat, lon: a.abhol_lon,
           etage: a.abhol_etage, aufzug: a.abhol_aufzug,
           name: a.name, telefon: a.telefon, volumen: vol, preis: Number(a.preis_eur) || 0,
-          beifahrer: braucht,
+          beifahrer: brauchtAb,
           dauerMin: ladezeitMin() + etagenMin(a.abhol_etage, a.abhol_aufzug)
         },
         lieferung: {
@@ -749,7 +766,7 @@
           label: a.liefer_label, lat: a.liefer_lat, lon: a.liefer_lon,
           etage: a.liefer_etage, aufzug: a.liefer_aufzug,
           name: a.name, telefon: a.telefon, volumen: vol, preis: Number(a.preis_eur) || 0,
-          beifahrer: braucht,
+          beifahrer: brauchtLief,
           dauerMin: ladezeitMin() + etagenMin(a.liefer_etage, a.liefer_aufzug)
         }
       };
