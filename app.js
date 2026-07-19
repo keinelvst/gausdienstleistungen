@@ -68,7 +68,23 @@ var CONFIG = {
 
   // ── Transport nach Berlin (Beiladung) ──────────────────────────────
   pickupRadiusKm: 30,            // Abholung ≤ dieser Umkreis um das Depot => Abholfahrt-Modell
-  deliveryMaxKmFromBerlin: 50,   // Lieferadresse weiter von Berlin entfernt => "bitte anfragen"
+  deliveryMaxKmFromBerlin: 50,   // Lieferadresse rund um das Fahrtziel => immer erlaubt
+
+  // Lieferadressen dürfen auch UNTERWEGS liegen (z. B. Nürnberg, Leipzig).
+  // Erlaubt, solange der Umweg gegenüber der direkten Strecke höchstens
+  // so groß ist. Weiter abseits => "bitte individuell anfragen".
+  korridorMaxUmwegKm: 50,
+
+  // >>> STELLPLATZ-ZUSCHLAG <<<
+  // Ladung, die nur einen Teil der Strecke mitfährt, blockiert den Platz
+  // trotzdem: Was in Nürnberg aussteigt, kann nicht schon ab Stuttgart von
+  // jemandem gebucht werden, der bis Berlin will. Dieser Anteil der
+  // restlichen Strecke wird deshalb mitberechnet.
+  //   0    = gar nicht (Teilstrecken sind dann sehr billig)
+  //   0,35 = moderat  ← Vorgabe Inhaber "leicht mit einberechnet"
+  //   1    = so teuer, als wäre die Ladung die ganze Strecke mitgefahren
+  // Wer die volle Strecke mitfährt, zahlt hier automatisch 0 €.
+  platzblockadeFaktor: 0.35,
   vanVolumeM3: 10,               // Ladevolumen des Transporters in m³ ("volles Auto") – mehr passt nicht rein
   vollpreisAbM3: 7.5,            // ab dieser Ladung zahlt der Kunde die Fahrt zu 100 %
                                  // (Rest geht für Packlücken, Sperriges und Gänge drauf)
@@ -252,6 +268,17 @@ var CONFIG = {
 
   // Fahrzeugkosten je Kilometer (ohne Fahrerlohn):
   // Diesel × Verbrauch + Verschleiß + Abschreibung + Fixkosten-Umlage + Maut.
+  // Darf diese Lieferadresse einen Sofort-Preis bekommen? Ja, wenn sie
+  // entweder im Zielgebiet liegt ODER unterwegs auf der Route – dort steigt
+  // die Ladung dann einfach früher aus.
+  function lieferzielErlaubt(delivery, richtung) {
+    var r = richtung || RICHTUNGEN.hin;
+    if (haversineKm(delivery, r.ziel) <= CONFIG.deliveryMaxKmFromBerlin) return true;
+    var umweg = haversineKm(r.start, delivery) + haversineKm(delivery, r.ziel) -
+                haversineKm(r.start, r.ziel);
+    return umweg <= CONFIG.korridorMaxUmwegKm;
+  }
+
   function vehicleCostPerKm(dieselPricePerL) {
     return dieselPricePerL * CONFIG.verbrauchLper100km / 100 +
            CONFIG.verschleissEurProKm + CONFIG.abschreibungEurProKm +
@@ -349,8 +376,19 @@ var CONFIG = {
       hours = umwegStd + l.pickupToDelivery.hours;
     }
 
-    var vehicleCost = km * vehicleCostPerKm(input.dieselPricePerL) * share;
+    var kostenProKm = vehicleCostPerKm(input.dieselPricePerL);
+    var vehicleCost = km * kostenProKm * share;
     var driverDriveCost = hours * CONFIG.fahrerStundensatzEur * share;
+
+    // Stellplatz-Zuschlag: Die Ladung fährt nur einen Teil der Hauptstrecke
+    // mit, belegt den Platz aber faktisch die ganze Fahrt über – umladen
+    // unterwegs geht nicht. Für die Strecke, die der Platz ungenutzt
+    // blockiert bleibt, wird ein Anteil berechnet.
+    // Volle Strecke mitgefahren => blockierteKm = 0 => kein Zuschlag.
+    var hauptlaufKm = (l.startToZiel && l.startToZiel.km) || 0;
+    var mitfahrtKm = Math.min(l.pickupToDelivery.km, hauptlaufKm);
+    var blockierteKm = Math.max(0, hauptlaufKm - mitfahrtKm);
+    var platzCost = blockierteKm * kostenProKm * share * CONFIG.platzblockadeFaktor;
 
     var handlingH = handlingHours();
     var handlingSelfCost = handlingH * CONFIG.fahrerStundensatzEur;
@@ -366,8 +404,8 @@ var CONFIG = {
     var floorEur = floorSurchargeEur(totals.volumeM3, input.items, input.pickup, input.delivery);
     var heavyEur = heavyItemSurchargeEur(input.items);
 
-    var selbstkosten = vehicleCost + driverDriveCost + handlingSelfCost + helperSelfCost +
-                       floorEur + heavyEur;
+    var selbstkosten = vehicleCost + driverDriveCost + platzCost + handlingSelfCost +
+                       helperSelfCost + floorEur + heavyEur;
     var subtotal = applyMargin(selbstkosten);
     var minApplied = subtotal < CONFIG.minPriceEur;
     var total = Math.ceil(Math.max(subtotal, CONFIG.minPriceEur));
@@ -381,8 +419,11 @@ var CONFIG = {
       volumeShare: share,
       weightKg: totals.weightKg,
       dieselPricePerL: input.dieselPricePerL,
+      mitfahrtKm: mitfahrtKm,
+      blockierteKm: blockierteKm,
       // Kundensicht: Zeilen inkl. anteiligem Gewinnaufschlag
       fahrtCost: applyMargin(vehicleCost + driverDriveCost),
+      platzCost: applyMargin(platzCost),
       handlingCost: applyMargin(handlingSelfCost),
       helperCost: applyMargin(helperSelfCost),
       floorCost: applyMargin(floorEur),
@@ -480,7 +521,10 @@ var CONFIG = {
     var legs = {
       depotToPickup:    { km: 10,  hours: 0.2 },
       pickupToDelivery: { km: 620, hours: 8.8 },
-      depotToDelivery:  { km: 630, hours: 9.0 }
+      depotToDelivery:  { km: 630, hours: 9.0 },
+      // Hauptlauf = Mitfahrstrecke: dieser Testkunde fährt die volle
+      // Strecke mit, es entsteht also kein Stellplatz-Zuschlag.
+      startToZiel:      { km: 620, hours: 8.8 }
     };
     var south = { lat: 48.5, lon: 9.0 };   // südlich vom Depot => Abholfahrt
     var north = { lat: 49.45, lon: 11.08 }; // Nürnberg-artig => Umweg
@@ -585,6 +629,63 @@ var CONFIG = {
       legs: { depotToPickup: { km: 200, hours: 2.5 }, pickupToDelivery: { km: 500, hours: 6 }, depotToDelivery: { km: 630, hours: 9 } }
     }));
     check("Umweg-km = Mehrweg 70 + Transport 500", umwegMitMehrweg.chargeableKm, 570);
+
+    // ── Stellplatz-Zuschlag: Teilstrecken blockieren die Ladefläche ──
+    function teilstrecke(mitfahrtKm) {
+      return calculateBerlinPrice(berlinInput({
+        pickup: { lat: north.lat, lon: north.lon, floors: 0, elevator: false },
+        legs: {
+          depotToPickup:    { km: 200, hours: 2.5 },
+          pickupToDelivery: { km: mitfahrtKm, hours: mitfahrtKm / 70 },
+          depotToDelivery:  { km: 200 + mitfahrtKm, hours: 2.5 + mitfahrtKm / 70 },
+          startToZiel:      { km: 630, hours: 9 }
+        }
+      }));
+    }
+    var volleStrecke = teilstrecke(630);
+    check("Volle Strecke => kein Stellplatz-Zuschlag", volleStrecke.platzCost, 0);
+    check("Volle Strecke => 0 km blockiert", volleStrecke.blockierteKm, 0);
+
+    var halbeStrecke = teilstrecke(300);
+    check("300 von 630 km => 330 km blockiert", halbeStrecke.blockierteKm, 330);
+    // 330 km × 0,541 €/km × 14,57 % Anteil × 0,35 = 9,10 €
+    check("Stellplatz bei 330 km blockiert => 9,10 €", halbeStrecke.platzCost, 9.1040138);
+
+    var kurzeStrecke = teilstrecke(50);
+    check("50 von 630 km => 580 km blockiert", kurzeStrecke.blockierteKm, 580);
+    checkTrue("Kurze Teilstrecke zahlt mehr Stellplatz als lange",
+      kurzeStrecke.platzCost > halbeStrecke.platzCost);
+
+    // Wichtig: Der Preis darf mit längerer Mitfahrt nie SINKEN.
+    var monoton = true, vorher = -1;
+    [50, 150, 300, 450, 630].forEach(function (km) {
+      var t = teilstrecke(km).subtotal;
+      if (t <= vorher) monoton = false;
+      vorher = t;
+    });
+    checkTrue("Preis steigt durchgehend mit der Mitfahrstrecke", monoton);
+
+    // Faktor 0 schaltet den Zuschlag komplett ab
+    var faktorVorher = CONFIG.platzblockadeFaktor;
+    CONFIG.platzblockadeFaktor = 0;
+    check("Faktor 0 => kein Stellplatz-Zuschlag", teilstrecke(300).platzCost, 0);
+    CONFIG.platzblockadeFaktor = faktorVorher;
+
+    // ── Lieferadressen unterwegs auf der Route ──
+    checkTrue("Berlin selbst ist erlaubt",
+      lieferzielErlaubt({ lat: 52.52, lon: 13.405 }, RICHTUNGEN.hin));
+    checkTrue("Nürnberg liegt auf der Route => erlaubt",
+      lieferzielErlaubt({ lat: 49.45, lon: 11.08 }, RICHTUNGEN.hin));
+    checkTrue("Leipzig liegt auf der Route => erlaubt",
+      lieferzielErlaubt({ lat: 51.34, lon: 12.37 }, RICHTUNGEN.hin));
+    checkTrue("München liegt nicht auf der Route => abgelehnt",
+      !lieferzielErlaubt({ lat: 48.14, lon: 11.58 }, RICHTUNGEN.hin));
+    checkTrue("Hamburg liegt nicht auf der Route => abgelehnt",
+      !lieferzielErlaubt({ lat: 53.55, lon: 9.99 }, RICHTUNGEN.hin));
+    checkTrue("Rückrichtung: Nürnberg liegt auch dort auf der Route",
+      lieferzielErlaubt({ lat: 49.45, lon: 11.08 }, RICHTUNGEN.rueck));
+    checkTrue("Rückrichtung: Stuttgart selbst ist erlaubt",
+      lieferzielErlaubt(CONFIG.depot, RICHTUNGEN.rueck));
 
     // Anteilsberechnung: voller Fahrtpreis ab 7,5 m³, gedeckelt bei 100 %
     check("Anteil bei 1,0927 m³ => 14,57 %", abhol.volumeShare * 100, 14.5696933);
@@ -1337,21 +1438,26 @@ var CONFIG = {
               modell: result ? result.model : null,
               abrechnungKm: result ? result.chargeableKm : null,
               volumenAnteil: result ? result.volumeShare : null,
+              mitfahrtKm: result ? result.mitfahrtKm : null,
+              blockierteKm: result ? result.blockierteKm : null,
               hinweis: hinweis || null
             }
           });
         }
 
-        // Lieferziel-Plausibilität: nur das Zielgebiet bekommt einen Sofort-Preis
-        if (haversineKm(data.delivery, richtung.ziel) > CONFIG.deliveryMaxKmFromBerlin) {
+        // Lieferziel-Plausibilität: Sofort-Preis gibt es für das Zielgebiet
+        // UND für alles, was unterwegs auf der Route liegt (z. B. Nürnberg,
+        // Leipzig) – dort steigt die Ladung einfach früher aus.
+        if (!lieferzielErlaubt(data.delivery, richtung)) {
           var waFar = transportWaMessage(data, null, { farDelivery: true, estimated: false }, richtung);
           showResult(resultEl,
             '<h3 class="result-title">Bitte individuell anfragen</h3>' +
-            '<p class="result-error-msg">Diese Lieferadresse liegt außerhalb von ' + richtung.zielName +
-            ' und Umgebung. Unser Sofort-Preis gilt für Lieferungen nach ' + richtung.zielName + ' (+' +
-            CONFIG.deliveryMaxKmFromBerlin +
-            ' km). Gerne machen wir Ihnen ein individuelles Angebot!</p>' +
-            whatsappBlock(waFar, anfrageFuer(null, "Lieferadresse außerhalb des Zielgebiets")), true);
+            '<p class="result-error-msg">Diese Lieferadresse liegt weder in ' + richtung.zielName +
+            ' und Umgebung noch auf unserer Route dorthin. Unser Sofort-Preis gilt für Lieferungen ' +
+            'nach ' + richtung.zielName + ' (+' + CONFIG.deliveryMaxKmFromBerlin +
+            ' km) und für alles, was unterwegs auf der Strecke liegt. ' +
+            'Gerne machen wir Ihnen ein individuelles Angebot!</p>' +
+            whatsappBlock(waFar, anfrageFuer(null, "Lieferadresse außerhalb von Ziel und Route")), true);
           return;
         }
 
@@ -1359,13 +1465,15 @@ var CONFIG = {
           routeKm(richtung.start, data.pickup),
           routeKm(data.pickup, data.delivery),
           routeKm(richtung.start, data.delivery),
+          routeKm(richtung.start, richtung.ziel),   // Hauptlauf – für den Stellplatz-Zuschlag
           getDieselPrice()
         ]).then(function (r) {
           var estimated = r[0].estimated || r[1].estimated || r[2].estimated;
-          var fuel = r[3];
+          var fuel = r[4];
           var result = calculateBerlinPrice({
             items: data.items,
-            legs: { depotToPickup: r[0], pickupToDelivery: r[1], depotToDelivery: r[2] },
+            legs: { depotToPickup: r[0], pickupToDelivery: r[1], depotToDelivery: r[2],
+                    startToZiel: r[3] },
             pickup: data.pickup,
             delivery: data.delivery,
             helperNeeded: data.helperNeeded,
@@ -1401,23 +1509,35 @@ var CONFIG = {
                      fmtNum(result.volumeShare * 100, 1) + " %)",
               amount: fmtEur(result.fahrtCost) },
             { label: "Be- & Entladen (ca. " + Math.round(result.handlingMinutes) + " Min.)",
-              amount: fmtEur(result.handlingCost) },
+              amount: fmtEur(result.handlingCost) }
+          ];
+          if (result.platzCost > 0.005) {
+            lines.push({ label: "Stellplatz (Ladefläche bleibt für " + fmtKm(result.blockierteKm) +
+                                " belegt)", amount: fmtEur(result.platzCost) });
+          }
+          lines = lines.concat([
             { label: "Etagenzuschlag (Tragen über Treppen)", amount: fmtEur(result.floorCost) },
             { label: "Schwere Gegenstände (" + fmtNum(result.weightKg, 0) + " kg gesamt)",
               amount: fmtEur(result.heavyCost) },
             { label: "Beifahrer / zweiter Träger", amount: fmtEur(result.helperCost) }
-          ];
+          ]);
           if (result.minApplied) {
             lines.push({ label: "Mindestauftragswert", amount: fmtEur(Math.max(0, CONFIG.minPriceEur - result.subtotal)) });
           }
 
           var badges = [
-            { text: result.model === "abholfahrt" ? "Abholfahrt-Modell" : "Umweg-Modell (liegt auf unserer Route)" },
+            { text: result.model === "abholfahrt" ? "Abholfahrt-Modell" : "Umweg-Modell (liegt auf unserer Route)" }
+          ];
+          if (result.blockierteKm > 1) {
+            badges.push({ text: "Teilstrecke: " + fmtKm(result.mitfahrtKm) + " von " +
+                                fmtKm(result.mitfahrtKm + result.blockierteKm) });
+          }
+          badges = badges.concat([
             { text: result.volumeShare >= 1
                 ? "Ladung: " + fmtNum(result.volumeM3, 2) + " m³ – voller Fahrtpreis"
                 : "Ladung: " + fmtNum(result.volumeM3, 2) + " m³ (voller Fahrtpreis ab " +
                   fmtNum(CONFIG.vollpreisAbM3, 1) + " m³)" }
-          ];
+          ]);
           badges.push(fuel.isFallback
             ? { text: "Diesel: Standardwert " + fmtNum(fuel.price, 2) + " €/l", warn: true }
             : { text: "Diesel: " + fmtNum(fuel.price, 2) + " €/l (aktuell)" });
@@ -1806,6 +1926,7 @@ var CONFIG = {
     etagenzuschlag: floorSurchargeEur,
     schwergutzuschlag: heavyItemSurchargeEur,
     modellwahl: chooseKmModel,
+    lieferzielErlaubt: lieferzielErlaubt,
     mengenrabatt: mitMengenrabatt,
     luftlinie: haversineKm,
     // Bausteine, die der Adminbereich (admin.js) mitbenutzt
