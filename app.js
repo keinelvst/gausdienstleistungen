@@ -86,6 +86,16 @@ var CONFIG = {
   // Wer die volle Strecke mitfährt, zahlt hier automatisch 0 €.
   platzblockadeFaktor: 0.35,
   vanVolumeM3: 10,               // Ladevolumen des Transporters in m³ ("volles Auto") – mehr passt nicht rein
+  maxZuladungKg: 1200,           // >>> ZULADUNG <<< Angabe Inhaber. Mehr Gesamtgewicht => kein
+                                 // Onlinepreis. Im Fahrzeugschein: Feld F.1 minus G, davon
+                                 // Fahrer, Beifahrer und vollen Tank abziehen.
+
+  // >>> PREISSPANNE FÜR DIE ANFRAGE <<<
+  // In der WhatsApp-Nachricht steht kein fester Betrag, sondern eine Spanne
+  // um den berechneten Preis. So bleibt Luft für Dinge, die sich erst vor
+  // Ort zeigen (enge Treppe, Halteverbot, mehr als angegeben).
+  spanneUnten: -5,               // Prozent unter dem berechneten Preis
+  spanneOben: 15,                // Prozent darüber
   vollpreisAbM3: 7.5,            // ab dieser Ladung zahlt der Kunde die Fahrt zu 100 %
                                  // (Rest geht für Packlücken, Sperriges und Gänge drauf)
   itemMarginCm: 3,               // Sicherheitsmarge je Maß (Länge, Breite, Höhe) in cm
@@ -287,6 +297,20 @@ var CONFIG = {
   }
 
   // Gewinnaufschlag auf die Selbstkosten.
+  // Preisspanne für die Anfrage: kein fester Betrag, sondern ein Rahmen um
+  // den berechneten Preis. Die Untergrenze wird abgerundet, die Obergrenze
+  // aufgerundet – so ist die Spanne nie enger als eingestellt.
+  function preisSpanne(total) {
+    return {
+      von: Math.floor(total * (1 + CONFIG.spanneUnten / 100)),
+      bis: Math.ceil(total * (1 + CONFIG.spanneOben / 100))
+    };
+  }
+  function spanneText(total) {
+    var s = preisSpanne(total);
+    return fmtEur0(s.von) + " – " + fmtEur0(s.bis);
+  }
+
   function applyMargin(n) {
     return n * (1 + CONFIG.gewinnaufschlagProzent / 100);
   }
@@ -357,6 +381,13 @@ var CONFIG = {
 
     if (totals.volumeM3 > CONFIG.vanVolumeM3) {
       return { ok: false, reason: "volume", volumeM3: totals.volumeM3, weightKg: totals.weightKg };
+    }
+
+    // Zuladung: Der Transporter darf nur begrenzt Gewicht mitnehmen. Passt die
+    // Ladung volumenmäßig, wiegt aber zu viel, gibt es keinen Onlinepreis –
+    // sonst wäre ein Preis zugesagt, den man nur mit Überladung fahren könnte.
+    if (totals.weightKg > CONFIG.maxZuladungKg) {
+      return { ok: false, reason: "weight", volumeM3: totals.volumeM3, weightKg: totals.weightKg };
     }
 
     // Anteil an Fahrzeug und Fahrzeit: ab vollpreisAbM3 zahlt der Kunde die ganze Fahrt.
@@ -683,6 +714,37 @@ var CONFIG = {
     check("Faktor 0 => kein Stellplatz-Zuschlag", teilstrecke(300).platzCost, 0);
     CONFIG.platzblockadeFaktor = faktorVorher;
 
+    // ── Zuladungsgrenze (1200 kg) ──
+    // Volumen passt, Gewicht nicht: 20 Kisten à 60 kg = 1200 kg sind noch ok,
+    // 21 Kisten = 1260 kg nicht mehr.
+    function kisten(anzahl, kg) {
+      return calculateBerlinPrice(berlinInput({
+        items: [{ lengthCm: 40, widthCm: 30, heightCm: 30, weightKg: kg, qty: anzahl }]
+      }));
+    }
+    var genauGrenze = kisten(20, 60);      // exakt 1200 kg
+    var drueber     = kisten(21, 60);      // 1260 kg
+    checkTrue("Genau 1200 kg werden noch angenommen", genauGrenze.ok === true);
+    checkTrue("1260 kg werden abgelehnt", drueber.ok === false);
+    checkTrue("Ablehnungsgrund ist das Gewicht", drueber.reason === "weight");
+    check("Abgelehnte Sendung meldet ihr Gewicht zurück", drueber.weightKg, 1260);
+    // Die Volumenprüfung darf davon unberührt bleiben
+    var leichtAberGross = calculateBerlinPrice(berlinInput({
+      items: [{ lengthCm: 100, widthCm: 100, heightCm: 100, weightKg: 1, qty: 12 }]
+    }));
+    checkTrue("Zu großes Volumen bleibt Grund 'volume'", leichtAberGross.reason === "volume");
+
+    // ── Preisspanne für die Anfrage ──
+    var sp = preisSpanne(400);
+    check("Spanne unten bei 400 € => 380 €", sp.von, 380);
+    check("Spanne oben bei 400 € => 460 €", sp.bis, 460);
+    checkTrue("Untergrenze liegt unter dem Preis", preisSpanne(137).von < 137);
+    checkTrue("Obergrenze liegt über dem Preis", preisSpanne(137).bis > 137);
+    checkTrue("Auch beim Mindestpreis bleibt die Spanne sinnvoll",
+      preisSpanne(60).von === 57 && preisSpanne(60).bis === 69);
+    checkTrue("Spanne wird als Text mit Gedankenstrich ausgegeben",
+      spanneText(400).indexOf("–") !== -1);
+
     // ── Träger nur an einer der beiden Adressen ──
     function mitTraeger(ab, lief, hilftSelbst) {
       return calculateBerlinPrice(berlinInput({
@@ -879,12 +941,20 @@ var CONFIG = {
   }
 
   // Einmalige Geokodierung beim Absenden (Photon, dann ORS als Fallback).
+  // Wichtig: Es wird unterschieden zwischen "Adresse gibt es nicht" und
+  // "Adressdienst gerade gestört". Sonst bekommt der Kunde bei einem
+  // Ausfall die Schuld zugeschoben und korrigiert eine völlig richtige
+  // Adresse so lange, bis er aufgibt.
   function geocodeQuery(query, bias) {
+    var dienstGestoert = false;
     return photonSearch(query, bias, undefined).then(function (places) {
       if (places.length) return places[0];
       throw new Error("photon leer");
-    }).catch(function () {
-      if (!CONFIG.orsApiKey) return null;
+    }).catch(function (err) {
+      // "photon leer" = Dienst lief, kannte die Adresse nur nicht.
+      // Alles andere (Netzfehler, 4xx/5xx, Zeitüberschreitung) = Störung.
+      dienstGestoert = !err || err.message !== "photon leer";
+      if (!CONFIG.orsApiKey) return dienstGestoert ? { gestoert: true } : null;
       var url = "https://api.openrouteservice.org/geocode/search?api_key=" +
                 encodeURIComponent(CONFIG.orsApiKey) +
                 "&text=" + encodeURIComponent(query) +
@@ -900,7 +970,11 @@ var CONFIG = {
           secondary: "",
           label: f.properties.label
         };
-      }).catch(function () { return null; });
+      }).catch(function () {
+        // Auch der Ersatzdienst antwortet nicht – dann liegt es sicher nicht
+        // am Kunden.
+        return { gestoert: true };
+      });
     });
   }
 
@@ -1073,9 +1147,24 @@ var CONFIG = {
     var q = input.value.trim();
     if (!q) return Promise.resolve(null);
     return geocodeQuery(q, bias).then(function (place) {
+      // Störungsmarke ist keine Adresse – nicht merken, nicht zurückgeben.
+      if (place && place.gestoert) return { gestoert: true };
       if (place && state) state.resolved = place;
       return place;
     });
+  }
+
+  // Ist das Ergebnis eine echte Adresse? Störungsmarken und "nicht gefunden"
+  // müssen unterschiedlich behandelt werden.
+  function istAdresse(p) { return !!(p && !p.gestoert && typeof p.lat === "number"); }
+  function istStoerung(p) { return !!(p && p.gestoert); }
+
+  // Einheitlicher Text für beide Fälle
+  function adressFehlerText(p) {
+    return istStoerung(p)
+      ? "Die Adresssuche ist gerade gestört – das liegt nicht an Ihrer Eingabe. " +
+        "Bitte in ein paar Minuten erneut versuchen oder uns direkt anschreiben."
+      : "Adresse nicht gefunden – bitte Straße, PLZ und Ort angeben.";
   }
 
   // ══════════════════════════════════════════════════════════════════
@@ -1117,6 +1206,22 @@ var CONFIG = {
     if (el) { el.textContent = msg; el.hidden = false; }
   }
 
+  // Nach einer fehlgeschlagenen Prüfung zum ersten beanstandeten Feld
+  // springen. Ohne das steht die Sammelmeldung unten am Absendeknopf,
+  // der Fehler aber möglicherweise mehrere Bildschirmhöhen weiter oben.
+  function zumErstenFehler(form) {
+    if (!form) return;
+    var feld = form.querySelector('[aria-invalid="true"]');
+    if (!feld) {
+      var meldung = form.querySelector(".field-error:not([hidden])");
+      feld = meldung ? meldung.previousElementSibling : null;
+    }
+    if (!feld) return;
+    try { feld.scrollIntoView({ behavior: "smooth", block: "center" }); } catch (e) { feld.scrollIntoView(); }
+    // Erst nach dem Scrollen fokussieren, sonst springt der Browser hart hin.
+    setTimeout(function () { try { feld.focus({ preventScroll: true }); } catch (e) { feld.focus(); } }, 250);
+  }
+
   function setLoading(btn, loading) {
     btn.disabled = loading;
     btn.querySelector(".btn-label").textContent = loading ? "Preis wird berechnet…" : "Preis berechnen";
@@ -1148,7 +1253,10 @@ var CONFIG = {
   var offeneAnfragen = {};
   var anfrageZaehler = 0;
 
-  function whatsappBlock(message, anfrage) {
+  // total (optional): Steht er drin, wird unter dem Knopf der Preisrahmen
+  // genannt, mit dem die Anfrage rausgeht. Ohne diesen Hinweis würde der
+  // Kunde auf dem Bildschirm eine andere Zahl sehen als in seiner Nachricht.
+  function whatsappBlock(message, anfrage, total) {
     var number = CONFIG.whatsappNumber || "";
     if (!number || number.indexOf("X") !== -1) {
       return '<span class="btn-whatsapp is-disabled">' + WA_ICON + ' Per WhatsApp anfragen</span>' +
@@ -1164,7 +1272,12 @@ var CONFIG = {
     return '<a class="btn-whatsapp"' + attr + ' href="' + esc(href) + '" target="_blank" rel="noopener">' +
            WA_ICON + ' Per WhatsApp anfragen</a>' +
            '<p class="wa-hint">Öffnet WhatsApp mit Ihrer fertigen Anfrage – Sie können sie vor dem Senden noch prüfen.' +
-           (anfrage ? ' Ihre Angaben werden dabei zur Bearbeitung der Anfrage gespeichert.' : '') + '</p>';
+           (typeof total === "number"
+             ? ' Wir nennen darin einen <strong>Preisrahmen von ' + esc(spanneText(total)) + '</strong>: ' +
+               'Der genaue Betrag steht fest, sobald wir kurz Rücksprache gehalten haben.'
+             : '') +
+           (anfrage ? ' Ihre Angaben werden dabei zur Bearbeitung der Anfrage gespeichert.' : '') +
+           ' <a href="datenschutz.html">Datenschutz</a></p>';
   }
 
   // Beim Klick auf den WhatsApp-Button die Anfrage in der Datenbank ablegen,
@@ -1369,7 +1482,7 @@ var CONFIG = {
                  " | Etagen: " + fmtEur(result.floorCost) +
                  " | Schwergut: " + fmtEur(result.heavyCost) +
                  " | Beifahrer: " + fmtEur(result.helperCost));
-      lines.push("GESAMT: " + fmtEur0(result.total));
+      lines.push("PREISRAHMEN: " + spanneText(result.total));
       lines.push("(Diesel " + fmtNum(result.dieselPricePerL, 2) + " €/l, Stand " +
                  new Date().toLocaleDateString("de-DE") + ", gültig " + CONFIG.priceValidityDays +
                  " Tage" + (flags.estimated ? ", Entfernung geschätzt" : "") + ")");
@@ -1457,6 +1570,7 @@ var CONFIG = {
       if (pickupFloor === null || deliveryFloor === null || items === null || date === null ||
           traegerFehlt || !pickupInput.value.trim() || !deliveryInput.value.trim()) {
         showFormError(prefix + "-form-error", "Bitte prüfen Sie die rot markierten Felder.");
+        zumErstenFehler(form);
         return;
       }
 
@@ -1468,9 +1582,9 @@ var CONFIG = {
         resolveAddress(deliveryInput, richtung.ziel)
       ]).then(function (places) {
         var pickup = places[0], delivery = places[1];
-        if (!pickup) { setFieldError(pickupInput, "Adresse nicht gefunden – bitte Straße, PLZ und Ort angeben."); }
-        if (!delivery) { setFieldError(deliveryInput, "Adresse nicht gefunden – bitte Straße, PLZ und Ort angeben."); }
-        if (!pickup || !delivery) throw { handled: true };
+        if (!istAdresse(pickup)) setFieldError(pickupInput, adressFehlerText(pickup));
+        if (!istAdresse(delivery)) setFieldError(deliveryInput, adressFehlerText(delivery));
+        if (!istAdresse(pickup) || !istAdresse(delivery)) { zumErstenFehler(form); throw { handled: true }; }
 
         var data = {
           pickup: { lat: pickup.lat, lon: pickup.lon, label: pickup.label,
@@ -1556,6 +1670,11 @@ var CONFIG = {
             if (result.reason === "volume") {
               msg = "Ihre Sendung ist größer als " + CONFIG.vanVolumeM3 + " m³ und passt leider nicht als Beiladung " +
                     "in unseren Transporter. Gerne machen wir Ihnen ein individuelles Angebot!";
+            } else if (result.reason === "weight") {
+              msg = "Ihre Sendung wiegt zusammen " + fmtNum(result.weightKg, 0) + " kg und liegt damit " +
+                    "über der Zuladung unseres Transporters (" + CONFIG.maxZuladungKg + " kg). " +
+                    "Das lässt sich meist auf zwei Fahrten aufteilen – fragen Sie uns einfach an, " +
+                    "wir finden eine Lösung!";
             } else if (result.reason === "heavy") {
               msg = "Ein Gegenstand wiegt " + CONFIG.maxEinzelstueckKg + " kg oder mehr. Solche Schwertransporte " +
                     "planen wir persönlich mit Ihnen – so stellen wir sicher, dass genug Helfer und die richtige " +
@@ -1622,7 +1741,7 @@ var CONFIG = {
             '<p class="result-sub">Beiladung ' + esc(pickup.label) + ' → ' + esc(delivery.label) + '</p>' +
             badgesHtml(badges) +
             breakdownHtml(lines, fmtEur0(result.total)) +
-            whatsappBlock(wa, anfrageFuer(result, null)) +
+            whatsappBlock(wa, anfrageFuer(result, null), result.total) +
             legalNote(), false);
         });
       }).catch(function (err) {
@@ -1657,7 +1776,7 @@ var CONFIG = {
     lines.push("Fahrzeug: " + fmtEur(result.vehicleCost) +
                " | Fahrer: " + fmtEur(result.driverCost) +
                (result.helperCost > 0 ? " | Beifahrer: " + fmtEur(result.helperCost) : ""));
-    lines.push("GESAMT: " + fmtEur0(result.total) +
+    lines.push("PREISRAHMEN: " + spanneText(result.total) +
                (result.minApplied ? " (Mindestpreis)" : ""));
     if (flags.estimated) lines.push("(Entfernung geschätzt)");
     return lines.join("\n");
@@ -1697,6 +1816,7 @@ var CONFIG = {
 
       if (!ok) {
         showFormError("s-form-error", "Bitte prüfen Sie die rot markierten Felder.");
+        zumErstenFehler(form);
         return;
       }
 
@@ -1708,9 +1828,9 @@ var CONFIG = {
         resolveAddress(destInput, CONFIG.depot)
       ]).then(function (places) {
         var pickup = places[0], dest = places[1];
-        if (!pickup) setFieldError(pickupInput, "Adresse nicht gefunden – bitte Straße, PLZ und Ort angeben.");
-        if (!dest) setFieldError(destInput, "Adresse nicht gefunden – bitte Straße, PLZ und Ort angeben.");
-        if (!pickup || !dest) throw { handled: true };
+        if (!istAdresse(pickup)) setFieldError(pickupInput, adressFehlerText(pickup));
+        if (!istAdresse(dest)) setFieldError(destInput, adressFehlerText(dest));
+        if (!istAdresse(pickup) || !istAdresse(dest)) { zumErstenFehler(form); throw { handled: true }; }
 
         var data = {
           pickup: pickup,
@@ -1780,7 +1900,7 @@ var CONFIG = {
             '<p class="result-sub">Sonderfahrt ' + esc(pickup.label) + ' → ' + esc(dest.label) + '</p>' +
             badgesHtml(badges) +
             breakdownHtml(lines, fmtEur0(result.total)) +
-            whatsappBlock(wa, anfrage) +
+            whatsappBlock(wa, anfrage, result.total) +
             legalNote(), false);
         });
       }).catch(function (err) {
@@ -1813,7 +1933,7 @@ var CONFIG = {
       lines.push("Arbeitszeit: " + result.billedHours + " Std. × " + result.staff + " × " +
                  fmtEur0(CONFIG.cleaningHourlyRateEur) + " = " + fmtEur(result.labor));
       lines.push("Anfahrt: " + fmtEur(result.travelFee));
-      lines.push("GESAMT: " + fmtEur0(result.total));
+      lines.push("PREISRAHMEN: " + spanneText(result.total));
     }
     return lines.join("\n");
   }
@@ -1856,6 +1976,7 @@ var CONFIG = {
 
       if (!ok) {
         showFormError("p-form-error", "Bitte prüfen Sie die rot markierten Felder.");
+        zumErstenFehler(form);
         return;
       }
 
@@ -1863,8 +1984,9 @@ var CONFIG = {
       setLoading(btn, true);
 
       resolveAddress(addressInput, CONFIG.cleaningAreaCenter).then(function (place) {
-        if (!place) {
-          setFieldError(addressInput, "Adresse nicht gefunden – bitte Straße, PLZ und Ort angeben.");
+        if (!istAdresse(place)) {
+          setFieldError(addressInput, adressFehlerText(place));
+          zumErstenFehler(form);
           throw { handled: true };
         }
 
@@ -1926,7 +2048,7 @@ var CONFIG = {
           '<p class="result-sub">' + esc(data.service) + ' – ' + esc(place.label) + '</p>' +
           badgesHtml(badges) +
           breakdownHtml(lines, fmtEur0(result.total)) +
-          whatsappBlock(wa, putzAnfrage(result, null)) +
+          whatsappBlock(wa, putzAnfrage(result, null), result.total) +
           legalNote(), false);
       }).catch(function (err) {
         if (!err || !err.handled) {
@@ -1973,6 +2095,30 @@ var CONFIG = {
     document.querySelectorAll("[data-config]").forEach(function (el) {
       var key = el.getAttribute("data-config");
       if (values[key] !== undefined) el.textContent = values[key];
+    });
+  }
+
+  // Vergangene Tage schon im Auswahldialog sperren, statt sie erst beim
+  // Absenden zu beanstanden.
+  function initDatumsgrenzen() {
+    var d = new Date();
+    var heute = d.getFullYear() + "-" +
+                ("0" + (d.getMonth() + 1)).slice(-2) + "-" +
+                ("0" + d.getDate()).slice(-2);
+    document.querySelectorAll('input[type="date"]').forEach(function (el) {
+      if (!el.getAttribute("min")) el.setAttribute("min", heute);
+    });
+  }
+
+  // Telefonnummer aus der WhatsApp-Nummer ableiten, damit sie nur an einer
+  // Stelle gepflegt werden muss (CONFIG.whatsappNumber).
+  function initTelefon() {
+    var nummer = String(CONFIG.whatsappNumber || "");
+    if (!nummer || nummer.indexOf("X") !== -1) return;
+    var lesbar = nummer.replace(/^49/, "+49 ").replace(/^(\+49 )(\d{3})(\d+)$/, "$1$2 $3");
+    document.querySelectorAll("[data-telefon]").forEach(function (el) {
+      el.setAttribute("href", "tel:+" + nummer);
+      if (el.hasAttribute("data-telefon-text")) el.textContent = lesbar;
     });
   }
 
@@ -2025,6 +2171,8 @@ var CONFIG = {
     initSonderfahrt();
     initPutzservice();
     initImpressum();
+    initDatumsgrenzen();
+    initTelefon();
     if (/[?&]test=1/.test(location.search)) runSelfTests();
   });
 
