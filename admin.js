@@ -605,6 +605,19 @@
     return beste;
   }
 
+  // Umsatz einer Tour. Abholung und Lieferung gehören zum selben Auftrag,
+  // deshalb zählt jede Anfrage-ID nur EINMAL – sonst wäre alles doppelt.
+  function tourUmsatz(stopps) {
+    var gesehen = {}, summe = 0;
+    stopps.forEach(function (s) {
+      if (s.anfrageId && !gesehen[s.anfrageId]) {
+        gesehen[s.anfrageId] = true;
+        summe += s.preis || 0;
+      }
+    });
+    return summe;
+  }
+
   // Abholung muss immer vor der zugehörigen Lieferung stehen.
   function reihenfolgeErlaubt(reihenfolge) {
     var gesehen = {};
@@ -699,14 +712,14 @@
           art: "abholung", paar: n, pIdx: pi, anfrageId: a.id,
           label: a.abhol_label, lat: a.abhol_lat, lon: a.abhol_lon,
           etage: a.abhol_etage, aufzug: a.abhol_aufzug,
-          name: a.name, telefon: a.telefon, volumen: vol,
+          name: a.name, telefon: a.telefon, volumen: vol, preis: Number(a.preis_eur) || 0,
           dauerMin: ladezeitMin() + etagenMin(a.abhol_etage, a.abhol_aufzug)
         },
         lieferung: {
           art: "lieferung", paar: n, pIdx: li, anfrageId: a.id,
           label: a.liefer_label, lat: a.liefer_lat, lon: a.liefer_lon,
           etage: a.liefer_etage, aufzug: a.liefer_aufzug,
-          name: a.name, telefon: a.telefon, volumen: vol,
+          name: a.name, telefon: a.telefon, volumen: vol, preis: Number(a.preis_eur) || 0,
           dauerMin: ladezeitMin() + etagenMin(a.liefer_etage, a.liefer_aufzug)
         }
       };
@@ -968,7 +981,8 @@
     punkte.forEach(function (s, i) {
       var nr = (s.art === "start") ? "Start" : (s.art === "ziel") ? "Ende" : String(i);
       zeilen.push(nr + ". " + (ART_NAME[s.art] || s.art) +
-                  (s.name ? " " + s.name : "") + ": " + (s.label || "") +
+                  (s.name ? " " + s.name : "") +
+                  (s.preis > 0 ? " – " + fmtEur0(s.preis) : "") + ": " + (s.label || "") +
                   (s.telefon ? " (" + s.telefon + ")" : ""));
     });
     zeilen.push("──────────────");
@@ -1103,6 +1117,7 @@
     }
 
     $("tour-stopps").innerHTML = html;
+    $("stopp-hinweis").hidden = !t.stopps.some(function (s) { return s.preis > 0; });
   }
 
   var ART_NAME = {
@@ -1133,11 +1148,20 @@
           'aria-label="Stopp entfernen">✕</button>' +
       '</div>';
 
+    // Preis des Auftrags – steht an der Abholung UND an der Lieferung.
+    // An der Lieferung gedämpft dargestellt: Es ist derselbe Auftrag,
+    // der Betrag fällt nur einmal an.
+    var preisZeile = s.preis > 0
+      ? '<span class="st-preis' + (s.art === "lieferung" ? " st-preis-wdh" : "") + '">' +
+        fmtEur0(s.preis) + "</span>"
+      : "";
+
     return '<li class="stopp art-' + esc(s.art) + (fest ? " stopp-fest" : "") + '">' +
       '<span class="st-nummer">' + esc(meta.nummer) + "</span>" +
       '<div class="st-inhalt">' +
         '<p class="st-kopf"><span class="st-art">' + esc(ART_NAME[s.art] || s.art) + "</span>" +
           (s.name ? ' <span class="st-kunde">' + esc(s.name) + "</span>" : "") +
+          preisZeile +
           '<span class="st-zeit">' + esc(meta.zeit) + "</span></p>" +
         '<p class="st-adresse">' + esc(s.label || "") + "</p>" +
         (details.length ? '<p class="st-details">' + details.join(" · ") + "</p>" : "") +
@@ -1271,7 +1295,7 @@
                       etage: s.etage === undefined ? null : s.etage,
                       aufzug: !!s.aufzug, name: s.name || null, telefon: s.telefon || null,
                       volumen: s.volumen || 0, dauerMin: s.dauerMin || 0,
-                      anfrageId: s.anfrageId || null
+                      preis: s.preis || 0, anfrageId: s.anfrageId || null
                     };
                   })
       };
@@ -1319,7 +1343,9 @@
           "</div></div>" +
           '<ol class="tour-kurz">' + stopps.map(function (s) {
             return "<li><strong>" + esc(ART_NAME[s.art] || s.art) + "</strong> " +
-                   esc(s.label || "") + (s.name ? " · " + esc(s.name) : "") + "</li>";
+                   esc(s.label || "") + (s.name ? " · " + esc(s.name) : "") +
+                   (s.preis > 0 ? ' <span class="tk-preis">' + fmtEur0(s.preis) + "</span>" : "") +
+                   "</li>";
           }).join("") + "</ol>" +
           (t.notiz ? '<p class="ak-klein">' + esc(t.notiz) + "</p>" : "") +
           '<div class="ak-aktionen">' +

@@ -310,6 +310,18 @@
 .st-kopf { margin: 0 0 1px; display: flex; flex-wrap: wrap; gap: 8px; align-items: baseline; }
 .st-art { font-weight: 700; font-size: 14px; color: var(--blue-900); }
 .st-kunde { font-size: 14px; color: var(--ink-soft); }
+.st-preis {
+  font-weight: 700;
+  font-size: 14px;
+  color: var(--ok);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+/* Lieferung: derselbe Auftrag, deshalb blasser – der Betrag zählt nur einmal */
+.st-preis-wdh { color: var(--ink-soft); font-weight: 600; }
+
+.tk-preis { font-weight: 700; color: var(--ok); font-variant-numeric: tabular-nums; }
+
 .st-zeit {
   margin-left: auto;
   font-variant-numeric: tabular-nums;
