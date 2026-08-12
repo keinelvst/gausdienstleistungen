@@ -45,9 +45,21 @@
   }
 
   // Liefert "region", "fern" oder "leer".
+  // Bevorzugt die genaue Prüfung über die PLZ-Koordinaten des Preisrechners
+  // (Umkreis KONFIG.regionRadiusKm um das Depot); die Listen oben dienen als
+  // Reserve, falls der Ort dort nicht gefunden wird.
   function stufeOrtEin(text) {
     var t = String(text).trim();
     if (t.length < 2) return "leer";
+
+    if (window.GausRechner && typeof KONFIG !== "undefined") {
+      var koordinaten = window.GausRechner.intern.findeOrt(t);
+      if (koordinaten) {
+        var km = window.GausRechner.intern.luftlinieKm(KONFIG.depot, koordinaten);
+        return km <= KONFIG.regionRadiusKm ? "region" : "fern";
+      }
+    }
+
     var plz = t.match(/\b(\d{5})\b/);
     if (plz) {
       var inRegion = REGION_PLZ_PRAEFIXE.some(function (p) {

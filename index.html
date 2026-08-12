@@ -236,6 +236,38 @@
             </div>
             <label class="check"><input type="checkbox" id="f-s100"> Einzelstück über 100&nbsp;kg (z.&nbsp;B. Klavier, Tresor)</label>
           </div>
+          <div id="block-gewicht" class="field" hidden>
+            <label for="f-gewicht">Gesamtgewicht (grob)</label>
+            <select id="f-gewicht">
+              <option value="300">unter 300 kg</option>
+              <option value="700">300–700 kg</option>
+              <option value="1200">700–1.200 kg</option>
+              <option value="ueber">über 1.200 kg</option>
+            </select>
+          </div>
+          <div id="block-extras" class="field" hidden>
+            <p class="feld-titel">Extras</p>
+            <div class="field-row">
+              <div class="field">
+                <label for="f-halteverbot">Halteverbotszone einrichten?</label>
+                <select id="f-halteverbot">
+                  <option value="0">Nicht nötig</option>
+                  <option value="1">An einer Adresse</option>
+                  <option value="2">An beiden Adressen</option>
+                </select>
+              </div>
+              <div class="field" id="feld-montage">
+                <label for="f-montage">Möbel ab- und aufbauen?</label>
+                <select id="f-montage">
+                  <option value="0">Nein, machen wir selbst</option>
+                  <option value="1">Wenig (ca. 1 Std.)</option>
+                  <option value="2">Mittel (ca. 2 Std.)</option>
+                  <option value="4">Viel (ca. 4 Std.)</option>
+                </select>
+              </div>
+            </div>
+            <label class="check"><input type="checkbox" id="f-verpackung"> Verpackungsmaterial benötigt (Kartons, Decken – Preis nach Absprache)</label>
+          </div>
           <div id="block-traeger" class="field" hidden>
             <label class="check"><input type="checkbox" id="f-traeger"> <span id="f-traeger-label">Tragehilfe benötigt</span></label>
           </div>
