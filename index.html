@@ -158,9 +158,11 @@
 
     <section id="anfrage" class="section section-alt">
       <div class="wrap">
-        <h2>Anfrage stellen</h2>
-        <p class="section-intro">Füllen Sie das Formular aus – der Knopf öffnet WhatsApp mit Ihrer fertigen Nachricht.
-           Sie können sie dort noch prüfen und ändern, bevor Sie sie absenden. Es werden keine Daten über diese Website übertragen oder gespeichert.</p>
+        <h2>Preis berechnen &amp; anfragen</h2>
+        <p class="section-intro">Füllen Sie das Formular aus – Sie sehen sofort eine Preisschätzung,
+           und der Knopf öffnet WhatsApp mit Ihrer fertigen Anfrage inklusive Preis. Sie können sie dort
+           noch prüfen und ändern, bevor Sie sie absenden. Die Berechnung läuft komplett in Ihrem Browser –
+           es werden keine Daten über diese Website übertragen oder gespeichert.</p>
         <form id="anfrage-form" class="card form-card" novalidate>
           <div class="field">
             <label for="f-leistung">Leistung <span class="req">*</span></label>
@@ -182,6 +184,61 @@
               <input type="text" id="f-nach" placeholder="z. B. 10115 Berlin" required>
             </div>
           </div>
+          <div id="block-menge" class="field" hidden>
+            <label for="f-menge">Wie viel soll transportiert werden?</label>
+            <select id="f-menge"></select>
+            <div class="field feld-m3" hidden>
+              <label for="f-m3">Menge in m³</label>
+              <input type="number" id="f-m3" min="0.5" step="0.5" inputmode="decimal" placeholder="z. B. 6">
+            </div>
+          </div>
+          <div id="block-etagen" class="field-row" hidden>
+            <div class="field">
+              <label for="f-von-etage">Abholung: Etage</label>
+              <div class="etage-zeile">
+                <select id="f-von-etage">
+                  <option value="0">Erdgeschoss</option>
+                  <option value="1">1. Etage</option>
+                  <option value="2">2. Etage</option>
+                  <option value="3">3. Etage</option>
+                  <option value="4">4. Etage</option>
+                  <option value="5">5. Etage</option>
+                  <option value="6">6. Etage oder höher</option>
+                </select>
+                <label class="check"><input type="checkbox" id="f-von-aufzug"> Aufzug</label>
+              </div>
+            </div>
+            <div class="field">
+              <label for="f-nach-etage">Lieferung: Etage</label>
+              <div class="etage-zeile">
+                <select id="f-nach-etage">
+                  <option value="0">Erdgeschoss</option>
+                  <option value="1">1. Etage</option>
+                  <option value="2">2. Etage</option>
+                  <option value="3">3. Etage</option>
+                  <option value="4">4. Etage</option>
+                  <option value="5">5. Etage</option>
+                  <option value="6">6. Etage oder höher</option>
+                </select>
+                <label class="check"><input type="checkbox" id="f-nach-aufzug"> Aufzug</label>
+              </div>
+            </div>
+          </div>
+          <div id="block-schwer" class="field" hidden>
+            <p class="feld-titel">Schwere Einzelstücke (über 40&nbsp;kg) – Anzahl</p>
+            <div class="schwer-grid">
+              <label>40–60&nbsp;kg <span class="schwer-beispiel">z.&nbsp;B. Trockner, Kommode</span>
+                <input type="number" id="f-s40" min="0" max="20" value="0" inputmode="numeric"></label>
+              <label>60–80&nbsp;kg <span class="schwer-beispiel">z.&nbsp;B. Waschmaschine</span>
+                <input type="number" id="f-s60" min="0" max="20" value="0" inputmode="numeric"></label>
+              <label>80–100&nbsp;kg <span class="schwer-beispiel">z.&nbsp;B. Kühl-Gefrier-Kombi</span>
+                <input type="number" id="f-s80" min="0" max="20" value="0" inputmode="numeric"></label>
+            </div>
+            <label class="check"><input type="checkbox" id="f-s100"> Einzelstück über 100&nbsp;kg (z.&nbsp;B. Klavier, Tresor)</label>
+          </div>
+          <div id="block-traeger" class="field" hidden>
+            <label class="check"><input type="checkbox" id="f-traeger"> <span id="f-traeger-label">Tragehilfe benötigt</span></label>
+          </div>
           <div class="field-row">
             <div class="field">
               <label for="f-termin">Wunschtermin</label>
@@ -196,6 +253,7 @@
             <label for="f-nachricht">Was soll transportiert werden?</label>
             <textarea id="f-nachricht" rows="4" placeholder="z. B. 2-Zimmer-Wohnung, ca. 20 Kartons, Waschmaschine, Sofa – Abholung 3. OG ohne Aufzug"></textarea>
           </div>
+          <div id="preis-box" class="preis-box" aria-live="polite" hidden></div>
           <p id="strecken-hinweis" class="strecken-hinweis" aria-live="polite" hidden>
             <strong>Hinweis zur Strecke:</strong> Diese Strecke wird selten gefahren – es kann daher
             länger dauern, bis Ihr Auftrag angenommen wird. Sie können trotzdem gerne anfragen.
@@ -229,7 +287,9 @@
         <details class="card faq-item">
           <summary>Wie kommt der Preis zustande?</summary>
           <p>Der Preis richtet sich vor allem nach Strecke, Menge bzw. Volumen und Aufwand beim Be- und Entladen
-             (z.&nbsp;B. Etage, Trageweg). Sie erhalten vorab einen Festpreis – der gilt dann auch.</p>
+             (z.&nbsp;B. Etage, Aufzug, schwere Einzelstücke, Tragehilfe). Der Preisrechner im Anfrageformular
+             rechnet genau diese Punkte durch und zeigt Ihnen sofort eine ehrliche Spanne. Sie erhalten vorab
+             einen Festpreis – der gilt dann auch.</p>
         </details>
         <details class="card faq-item">
           <summary>Welche Gebiete werden bedient?</summary>
@@ -277,6 +337,8 @@
     </div>
   </footer>
 
+  <script src="plz-daten.js"></script>
+  <script src="rechner.js"></script>
   <script src="script.js"></script>
 </body>
 </html>

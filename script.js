@@ -96,6 +96,14 @@
     zeilen.push("Nach: " + felder.nach);
     if (felder.termin) zeilen.push("Wunschtermin: " + fmtDatumDe(felder.termin));
     if (felder.name) zeilen.push("Name: " + felder.name);
+    // Angaben und Preisschätzung aus dem Preisrechner (rechner.js) anhängen.
+    if (window.GausRechner) {
+      var extra = window.GausRechner.whatsappZeilen();
+      if (extra.length) {
+        zeilen.push("");
+        extra.forEach(function (z) { zeilen.push(z); });
+      }
+    }
     if (felder.nachricht) {
       zeilen.push("");
       zeilen.push("Details: " + felder.nachricht);

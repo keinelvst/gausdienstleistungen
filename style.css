@@ -230,6 +230,52 @@ textarea { resize: vertical; }
   margin: 6px 0 0;
 }
 
+/* ── Preisrechner ────────────────────────────────────────── */
+
+.feld-titel { font-weight: 600; margin-bottom: 8px; font-size: 0.95rem; }
+
+.check {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-weight: 400;
+  cursor: pointer;
+  margin: 0;
+}
+.check input { width: auto; margin: 0; accent-color: var(--brand); width: 18px; height: 18px; flex: none; }
+
+.etage-zeile { display: flex; align-items: center; gap: 14px; }
+.etage-zeile select { flex: 1; }
+
+.schwer-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 12px;
+  margin-bottom: 12px;
+}
+.schwer-grid label { font-weight: 600; font-size: 0.9rem; }
+.schwer-beispiel { display: block; font-weight: 400; color: var(--ink-soft); font-size: 0.82rem; margin: 2px 0 5px; }
+
+.preis-box {
+  background: #eef5f9;
+  border: 1px solid #c8dbe7;
+  border-radius: 8px;
+  padding: 16px;
+  margin-bottom: 16px;
+}
+
+.preis-titel { font-weight: 700; color: var(--brand); margin-bottom: 8px; }
+
+.preis-tabelle { width: 100%; border-collapse: collapse; font-size: 0.95rem; }
+.preis-tabelle td { padding: 5px 0; border-bottom: 1px solid #d9e6ee; }
+.preis-tabelle td:last-child { text-align: right; white-space: nowrap; }
+
+.preis-total { margin: 12px 0 0; font-size: 1.05rem; }
+.preis-total strong { color: var(--brand); font-size: 1.2rem; }
+
+.preis-hinweis { margin: 10px 0 0; font-size: 0.92rem; }
+.preis-klein { margin: 10px 0 0; font-size: 0.83rem; color: var(--ink-soft); }
+
 .strecken-hinweis {
   background: #fff7ec;
   border: 1px solid #f0d9b8;
