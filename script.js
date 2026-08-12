@@ -9,6 +9,80 @@
 
   var WHATSAPP_NUMMER = "491626806273";
 
+  // ── Streckenhinweis ──────────────────────────────────────────────
+  // Fahrten, bei denen Start UND Ziel in der Region Stuttgart liegen
+  // (rund 50 km Umkreis), werden häufig gefahren. Liegt eine Seite
+  // weiter weg, erscheint unter dem Formular der Hinweis, dass die
+  // Strecke selten gefahren wird. Sonderfahrten sind davon ausgenommen –
+  // die fahren wir jederzeit.
+  //
+  // Die Erkennung läuft komplett lokal im Browser: zuerst über die
+  // Postleitzahl (Anfangsziffern der PLZ-Gebiete rund um Stuttgart),
+  // ersatzweise über bekannte Ortsnamen der Region. Beide Listen können
+  // hier einfach erweitert werden.
+  var REGION_PLZ_PRAEFIXE = [
+    "70", "71",                                      // Stuttgart, Ludwigsburg, Böblingen, Waiblingen, Backnang
+    "720", "721", "722", "724", "725", "726", "727", // Tübingen, Nagold, Metzingen, Nürtingen, Reutlingen
+    "730", "731", "732", "735", "736", "737",        // Göppingen, Kirchheim, Schwäbisch Gmünd, Schorndorf, Esslingen
+    "740", "741", "742", "743",                      // Heilbronn, Neckarsulm, Bietigheim-Bissingen
+    "750", "751", "752", "753", "754"                // Bretten, Pforzheim, Calw, Mühlacker
+  ];
+  var REGION_ORTE = [
+    "stuttgart", "ludwigsburg", "boeblingen", "sindelfingen", "esslingen",
+    "waiblingen", "fellbach", "leonberg", "kornwestheim", "ditzingen",
+    "gerlingen", "leinfelden", "echterdingen", "filderstadt", "ostfildern",
+    "plochingen", "wendlingen", "nuertingen", "kirchheim", "tuebingen",
+    "reutlingen", "metzingen", "pfullingen", "herrenberg", "goeppingen",
+    "schwaebisch gmuend", "schorndorf", "backnang", "winnenden", "weinstadt",
+    "bietigheim", "vaihingen", "muehlacker", "pforzheim", "calw", "nagold",
+    "heilbronn", "neckarsulm", "marbach", "remseck", "korb", "gaertringen",
+    "nufringen", "holzgerlingen", "waldenbuch", "steinenbronn", "renningen"
+  ];
+
+  function normalisiereOrt(text) {
+    return String(text).toLowerCase()
+      .replace(/ä/g, "ae").replace(/ö/g, "oe").replace(/ü/g, "ue").replace(/ß/g, "ss");
+  }
+
+  // Liefert "region", "fern" oder "leer".
+  function stufeOrtEin(text) {
+    var t = String(text).trim();
+    if (t.length < 2) return "leer";
+    var plz = t.match(/\b(\d{5})\b/);
+    if (plz) {
+      var inRegion = REGION_PLZ_PRAEFIXE.some(function (p) {
+        return plz[1].indexOf(p) === 0;
+      });
+      return inRegion ? "region" : "fern";
+    }
+    var norm = normalisiereOrt(t);
+    var bekannt = REGION_ORTE.some(function (ort) {
+      return new RegExp("\\b" + ort + "\\b").test(norm);
+    });
+    return bekannt ? "region" : "fern";
+  }
+
+  function initStreckenHinweis() {
+    var hinweis = document.getElementById("strecken-hinweis");
+    var leistung = document.getElementById("f-leistung");
+    var von = document.getElementById("f-von");
+    var nach = document.getElementById("f-nach");
+    if (!hinweis || !leistung || !von || !nach) return;
+
+    function aktualisiere() {
+      var vonStufe = stufeOrtEin(von.value);
+      var nachStufe = stufeOrtEin(nach.value);
+      var zeigen = leistung.value !== "Sonderfahrt" &&
+                   vonStufe !== "leer" && nachStufe !== "leer" &&
+                   (vonStufe === "fern" || nachStufe === "fern");
+      hinweis.hidden = !zeigen;
+    }
+
+    leistung.addEventListener("change", aktualisiere);
+    von.addEventListener("input", aktualisiere);
+    nach.addEventListener("input", aktualisiere);
+  }
+
   function fmtDatumDe(iso) {
     var teile = String(iso).split("-");
     if (teile.length !== 3) return iso;
@@ -65,6 +139,7 @@
 
   document.addEventListener("DOMContentLoaded", function () {
     initFormular();
+    initStreckenHinweis();
     initDatumsgrenzen();
   });
 })();
