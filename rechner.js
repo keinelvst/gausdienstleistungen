@@ -23,6 +23,8 @@ var KONFIG = {
   //
   // >>> GEWINN EINSTELLEN: Prozent-Aufschlag auf die Selbstkosten. <<<
   // 0 = reine Kostendeckung (der 30-€/h-Fahrerlohn ist dabei schon drin).
+  // Jede Leistung hat unten ihren eigenen, an Marktpreisen kalibrierten
+  // Aufschlag – dieser Grundwert gilt nur, falls dort einer fehlt.
   gewinnaufschlagProzent: 20,
 
   fahrerStundensatzEur: 30,      // Lohn Fahrer, je Stunde
@@ -39,6 +41,13 @@ var KONFIG = {
 
   durchschnittstempoKmh: 80,     // für die Fahrzeit-Schätzung
   roadFactor: 1.3,               // Luftlinie × Faktor ≈ Straßen-km
+
+  // Anteil der Leer-Rückfahrt zum Depot, der dem Kunden berechnet wird
+  // (Umzug und Sonderfahrt). 1 = komplett, 0,6 = 60 %. Hintergrund: Auf
+  // der Rückfahrt lassen sich oft Beiladungen mitnehmen – so bleiben
+  // lange Fahrten bezahlbar. Mit 0,6 und den Margen unten bleibt selbst
+  // eine komplett leere Rückfahrt noch kostendeckend (geprüft 08/2026).
+  rueckfahrtFaktor: 0.6,
 
   // ── Be- und Entladen ───────────────────────────────────────────────
   ladezeitProStoppMin: 22.5,     // Grundzeit je Stopp (Abholung bzw. Lieferung)
@@ -83,7 +92,14 @@ var KONFIG = {
   gewinnaufschlagBeiladungProzent: 25,
 
   // ── Umzug ──────────────────────────────────────────────────────────
-  umzugMinPreisEur: 120,         // Mindestauftragswert Umzug
+  // Eigener Gewinnaufschlag für Umzüge, kalibriert 08/2026 an Markt-
+  // preisen (1-Zimmer lokal ~450–800 €, 2-Zimmer lokal ~700–1.200 €,
+  // 1-Zimmer-Fernumzug 500 km ~1.200–2.500 €): Umzugsfirmen kalkulieren
+  // 40–60 € je Mann-Stunde – der Aufschlag deckt die Differenz zu den
+  // 30-€-Selbstkosten plus Gemeinkosten.
+  gewinnaufschlagUmzugProzent: 45,
+  umzugMinPreisEur: 200,         // Mindestauftragswert Umzug – unter ~200 € fährt
+                                 // kein professioneller Umzug (Markt-Minimum)
   umzugMaxOnlineM3: 25,          // darüber kein Onlinepreis => "bitte anfragen"
   umzugFernabKm: 150,            // braucht ein Umzug MEHRERE Fahrten und ist die
                                  // Strecke länger als das, gibt es keinen Online-
@@ -91,7 +107,11 @@ var KONFIG = {
                                  // individuelles Angebot statt Mondpreis)
 
   // ── Sonderfahrt ────────────────────────────────────────────────────
-  sonderfahrtMinPreisEur: 60,    // Mindestpreis Sonderfahrt
+  // Eigener Gewinnaufschlag für Sonderfahrten, kalibriert 08/2026 an
+  // Kurier-Marktpreisen (Sprinter-Direktfahrt ~0,70–1,10 €/km, Mindest-
+  // pauschalen ab ca. 89 €; Kurzstrecken-Pauschalen teils deutlich höher).
+  gewinnaufschlagSonderfahrtProzent: 25,
+  sonderfahrtMinPreisEur: 90,    // Mindestpreis Sonderfahrt (Kurier-Mindestpauschale)
 
   // ── Extras ─────────────────────────────────────────────────────────
   halteverbotEurProZone: 120,    // Halteverbotszone je Adresse (Genehmigung,
@@ -288,9 +308,6 @@ var KONFIG = {
     }
     return summe;
   }
-  function extrasKosten(e, zeilen) {
-    return extrasKostenMitMarge(e, zeilen, undefined);
-  }
 
   function ergebnisAus(zeilen, hinweise, selbstkosten, minPreis, termin, aufschlagProzent) {
     var zwischensumme = mitAufschlag(selbstkosten, aufschlagProzent);
@@ -311,31 +328,49 @@ var KONFIG = {
     };
   }
 
+  // Tipp, wenn dieselbe Ladung als Beiladung deutlich günstiger wäre –
+  // ehrlich gegenüber dem Kunden und entlastet die teuren Exklusivfahrten.
+  function beiladungsTipp(e, streckeKm, total, hinweise) {
+    if (!e.volumenM3 || e.volumenM3 > KONFIG.vanVolumeM3) return;
+    if (streckeKm <= KONFIG.umzugFernabKm) return;
+    var b = berechneBeiladung(e);
+    if (b.ok && b.total < 0.7 * total) {
+      hinweise.push("Tipp: Sind Sie beim Termin flexibel? Als Beiladung kostet diese Menge nur ca. " +
+        fmtEur0(b.spanne.von) + " – " + fmtEur0(b.spanne.bis) + " – wählen Sie oben einfach „Beiladung“.");
+    }
+  }
+
   function berechneSonderfahrt(e) {
+    var marge = KONFIG.gewinnaufschlagSonderfahrtProzent;
     var anfahrt = strecke(KONFIG.depot, e.von);
     var haupt = strecke(e.von, e.nach);
     var rueck = strecke(e.nach, KONFIG.depot);
-    var km = anfahrt.km + haupt.km + rueck.km;
-    var fahrzeit = anfahrt.stunden + haupt.stunden + rueck.stunden;
-    var ladezeit = ladeZeitStunden(2, e.volumenM3);
-    var gesamt = fahrzeit + ladezeit;
 
-    var fahrzeug = km * kostenProKm();
+    // Berechnet wird die Rückfahrt nur anteilig (KONFIG.rueckfahrtFaktor);
+    // gefahren wird sie trotzdem ganz – Übernachtungen richten sich daher
+    // nach der echten Fahrzeit.
+    var kmBerechnet = anfahrt.km + haupt.km + rueck.km * KONFIG.rueckfahrtFaktor;
+    var fahrzeitEcht = anfahrt.stunden + haupt.stunden + rueck.stunden;
+    var fahrzeitBerechnet = kmBerechnet / KONFIG.durchschnittstempoKmh;
+    var ladezeit = ladeZeitStunden(2, e.volumenM3);
+    var gesamt = fahrzeitBerechnet + ladezeit;
+
+    var fahrzeug = kmBerechnet * kostenProKm();
     var fahrer = gesamt * KONFIG.fahrerStundensatzEur;
     var beifahrer = e.traeger ? gesamt * KONFIG.beifahrerStundensatzEur : 0;
     var etagen = etagenZuschlag(e.volumenM3 || 0, e.schwer, [e.abholung, e.lieferung]);
     var schwergut = schwergutZuschlag(e.schwer);
-    var naechte = uebernachtungen(fahrzeit);
+    var naechte = uebernachtungen(fahrzeitEcht);
     var hotel = naechte * KONFIG.uebernachtungEurProNacht;
 
     var zeilen = [
-      { label: "Fahrt (" + Math.round(km) + " km inkl. An- und Rückfahrt)", eur: mitAufschlag(fahrzeug + fahrer) }
+      { label: "Fahrt (" + Math.round(kmBerechnet) + " km inkl. Anfahrt u. anteiliger Rückfahrt)", eur: mitAufschlag(fahrzeug + fahrer, marge) }
     ];
-    if (beifahrer) zeilen.push({ label: "Beifahrer/Träger", eur: mitAufschlag(beifahrer) });
-    if (etagen) zeilen.push({ label: "Etagenzuschlag", eur: mitAufschlag(etagen) });
-    if (schwergut) zeilen.push({ label: "Schwere Einzelstücke", eur: mitAufschlag(schwergut) });
-    if (hotel) zeilen.push({ label: "Übernachtung unterwegs (" + naechte + "×)", eur: mitAufschlag(hotel) });
-    var extras = extrasKosten(e, zeilen);
+    if (beifahrer) zeilen.push({ label: "Beifahrer/Träger", eur: mitAufschlag(beifahrer, marge) });
+    if (etagen) zeilen.push({ label: "Etagenzuschlag", eur: mitAufschlag(etagen, marge) });
+    if (schwergut) zeilen.push({ label: "Schwere Einzelstücke", eur: mitAufschlag(schwergut, marge) });
+    if (hotel) zeilen.push({ label: "Übernachtung unterwegs (" + naechte + "×)", eur: mitAufschlag(hotel, marge) });
+    var extras = extrasKostenMitMarge(e, zeilen, marge);
 
     var hinweise = [];
     if (naechte > 0) hinweise.push("Die Strecke passt nicht in einen Fahrtag – " + naechte +
@@ -343,8 +378,9 @@ var KONFIG = {
 
     var erg = ergebnisAus(zeilen, hinweise,
       fahrzeug + fahrer + beifahrer + etagen + schwergut + hotel + extras,
-      KONFIG.sonderfahrtMinPreisEur, e.termin);
+      KONFIG.sonderfahrtMinPreisEur, e.termin, marge);
     erg.streckeKm = haupt.km;
+    beiladungsTipp(e, haupt.km, erg.total, erg.hinweise);
     return erg;
   }
 
@@ -399,30 +435,32 @@ var KONFIG = {
       return { ok: false, grund: "Bei dieser Menge und Entfernung lohnt sich ein größeres Fahrzeug – dafür erstellen wir gerne ein individuelles Angebot. Fragen Sie einfach per WhatsApp an." };
     }
 
+    var marge = KONFIG.gewinnaufschlagUmzugProzent;
     var anfahrt = strecke(KONFIG.depot, e.von);
     var rueck = strecke(e.nach, KONFIG.depot);
-    var km = anfahrt.km + rueck.km + pendel.km * (2 * fahrten - 1);
-    var fahrzeit = km / KONFIG.durchschnittstempoKmh;
+    var kmBerechnet = anfahrt.km + rueck.km * KONFIG.rueckfahrtFaktor + pendel.km * (2 * fahrten - 1);
+    var kmEcht = anfahrt.km + rueck.km + pendel.km * (2 * fahrten - 1);
+    var fahrzeit = kmBerechnet / KONFIG.durchschnittstempoKmh;
     var ladezeit = ladeZeitStunden(2 * fahrten, e.volumenM3);
     var gesamt = fahrzeit + ladezeit;
 
-    var fahrzeug = km * kostenProKm();
+    var fahrzeug = kmBerechnet * kostenProKm();
     var fahrer = gesamt * KONFIG.fahrerStundensatzEur;
     var beifahrer = e.traeger ? gesamt * KONFIG.beifahrerStundensatzEur : 0;
     var etagen = etagenZuschlag(e.volumenM3, e.schwer, [e.abholung, e.lieferung]);
     var schwergut = schwergutZuschlag(e.schwer);
-    var naechte = uebernachtungen(fahrzeit);
+    var naechte = uebernachtungen(kmEcht / KONFIG.durchschnittstempoKmh);
     var hotel = naechte * KONFIG.uebernachtungEurProNacht;
 
     var zeilen = [
-      { label: "Fahrt (" + Math.round(km) + " km" + (fahrten > 1 ? ", " + fahrten + " Fahrten" : "") + ")", eur: mitAufschlag(fahrzeug) },
-      { label: "Fahrer inkl. Be- und Entladen (" + gesamt.toFixed(1).replace(".", ",") + " Std.)", eur: mitAufschlag(fahrer) }
+      { label: "Fahrt (" + Math.round(kmBerechnet) + " km" + (fahrten > 1 ? ", " + fahrten + " Fahrten" : "") + ")", eur: mitAufschlag(fahrzeug, marge) },
+      { label: "Fahrer inkl. Be- und Entladen (" + gesamt.toFixed(1).replace(".", ",") + " Std.)", eur: mitAufschlag(fahrer, marge) }
     ];
-    if (beifahrer) zeilen.push({ label: "Träger (2. Person)", eur: mitAufschlag(beifahrer) });
-    if (etagen) zeilen.push({ label: "Etagenzuschlag", eur: mitAufschlag(etagen) });
-    if (schwergut) zeilen.push({ label: "Schwere Einzelstücke", eur: mitAufschlag(schwergut) });
-    if (hotel) zeilen.push({ label: "Übernachtung unterwegs (" + naechte + "×)", eur: mitAufschlag(hotel) });
-    var extras = extrasKosten(e, zeilen);
+    if (beifahrer) zeilen.push({ label: "Träger (2. Person)", eur: mitAufschlag(beifahrer, marge) });
+    if (etagen) zeilen.push({ label: "Etagenzuschlag", eur: mitAufschlag(etagen, marge) });
+    if (schwergut) zeilen.push({ label: "Schwere Einzelstücke", eur: mitAufschlag(schwergut, marge) });
+    if (hotel) zeilen.push({ label: "Übernachtung unterwegs (" + naechte + "×)", eur: mitAufschlag(hotel, marge) });
+    var extras = extrasKostenMitMarge(e, zeilen, marge);
 
     var hinweise = [];
     if (fahrten > 1) hinweise.push("Bei " + e.volumenM3 + " m³ sind " + fahrten + " Fahrten mit dem " + KONFIG.vanVolumeM3 + "-m³-Transporter nötig.");
@@ -431,9 +469,10 @@ var KONFIG = {
 
     var erg = ergebnisAus(zeilen, hinweise,
       fahrzeug + fahrer + beifahrer + etagen + schwergut + hotel + extras,
-      KONFIG.umzugMinPreisEur, e.termin);
+      KONFIG.umzugMinPreisEur, e.termin, marge);
     erg.streckeKm = pendel.km;
     erg.fahrten = fahrten;
+    beiladungsTipp(e, pendel.km, erg.total, erg.hinweise);
     return erg;
   }
 
@@ -658,10 +697,16 @@ var KONFIG = {
     var ergebnisse = [];
     // Die Tests rechnen bewusst ohne Gewinnaufschlag, damit sie unabhängig
     // davon gelten, welche Prozentsätze gerade eingestellt sind.
-    var margeVorher = KONFIG.gewinnaufschlagProzent;
-    var margeBeiladungVorher = KONFIG.gewinnaufschlagBeiladungProzent;
+    var margenVorher = {
+      basis: KONFIG.gewinnaufschlagProzent,
+      beiladung: KONFIG.gewinnaufschlagBeiladungProzent,
+      umzug: KONFIG.gewinnaufschlagUmzugProzent,
+      sonderfahrt: KONFIG.gewinnaufschlagSonderfahrtProzent
+    };
     KONFIG.gewinnaufschlagProzent = 0;
     KONFIG.gewinnaufschlagBeiladungProzent = 0;
+    KONFIG.gewinnaufschlagUmzugProzent = 0;
+    KONFIG.gewinnaufschlagSonderfahrtProzent = 0;
 
     function check(name, ist, soll, toleranz) {
       var ok = Math.abs(ist - soll) <= (toleranz || 0.01);
@@ -682,12 +727,14 @@ var KONFIG = {
     var bl = berechneBeiladung(basis);
     check("Beiladung 2 m³ S->B (ohne Marge)", bl.total, 213, 2);
     var sf = berechneSonderfahrt(basis);
-    check("Sonderfahrt S->B inkl. Übernachtung (ohne Marge)", sf.total, 1523, 15);
+    check("Sonderfahrt S->B: 60 % Rückfahrt + Übernachtung (ohne Marge)", sf.total, 1255, 15);
     var minimal = berechneBeiladung({ von: S, nach: S, volumenM3: 1, schwer: {}, abholung: eg, lieferung: eg, traeger: false, termin: "" });
     check("Mindestpreis Beiladung", minimal.total, KONFIG.beiladungMinPreisEur, 0);
 
-    KONFIG.gewinnaufschlagProzent = margeVorher;
-    KONFIG.gewinnaufschlagBeiladungProzent = margeBeiladungVorher;
+    KONFIG.gewinnaufschlagProzent = margenVorher.basis;
+    KONFIG.gewinnaufschlagBeiladungProzent = margenVorher.beiladung;
+    KONFIG.gewinnaufschlagUmzugProzent = margenVorher.umzug;
+    KONFIG.gewinnaufschlagSonderfahrtProzent = margenVorher.sonderfahrt;
     var fehler = ergebnisse.filter(function (z) { return z.indexOf("FEHLER") === 0; }).length;
     console.log("Gaus-Preisrechner Selbsttest:\n" + ergebnisse.join("\n") +
                 "\n=> " + (ergebnisse.length - fehler) + "/" + ergebnisse.length + " OK");
