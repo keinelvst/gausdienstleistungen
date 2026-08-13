@@ -72,7 +72,15 @@ var KONFIG = {
 
   // ── Beiladung ──────────────────────────────────────────────────────
   vollpreisAbM3: 7.5,            // ab dieser Ladung zahlt der Kunde die Fahrt zu 100 %
-  beiladungMinPreisEur: 60,      // Mindestauftragswert Beiladung
+  beiladungMinPreisEur: 80,      // Mindestauftragswert Beiladung – Markt für lokale
+                                 // Kleintransporte liegt bei ca. 80–130 € (Stand 08/2026)
+  // Eigener Gewinnaufschlag NUR für Beiladungen. Kalibriert 08/2026 an
+  // Marktpreisen (Portale nennen ~30–70 €/m³ deutschlandweit; reale
+  // Angebote Stuttgart–Berlin: 1 m³ ~100–180 €, 2 m³ ~180–280 €):
+  // 25 % trifft den Durchschnitt im Kernbereich 1–5 m³. Große Mengen
+  // (8–10 m³) bleiben bewusst kostendeckend über dem Portalniveau –
+  // ein 10-m³-Transporter kann 40-m³-Sammel-LKW nicht unterbieten.
+  gewinnaufschlagBeiladungProzent: 25,
 
   // ── Umzug ──────────────────────────────────────────────────────────
   umzugMinPreisEur: 120,         // Mindestauftragswert Umzug
@@ -192,8 +200,9 @@ var KONFIG = {
            KONFIG.werbekostenProJahrEur / KONFIG.jahresKilometer;
   }
 
-  function mitAufschlag(n) {
-    return n * (1 + KONFIG.gewinnaufschlagProzent / 100);
+  function mitAufschlag(n, prozent) {
+    if (prozent === undefined) prozent = KONFIG.gewinnaufschlagProzent;
+    return n * (1 + prozent / 100);
   }
 
   function preisSpanne(total) {
@@ -263,25 +272,28 @@ var KONFIG = {
   // ══════════════════════════════════════════════════════════════════
 
   // Extras, die bei jeder Leistung gleich funktionieren.
-  function extrasKosten(e, zeilen) {
+  function extrasKostenMitMarge(e, zeilen, marge) {
     var summe = 0;
     var zonen = e.halteverbotZonen || 0;
     if (zonen > 0) {
       var hv = zonen * KONFIG.halteverbotEurProZone;
-      zeilen.push({ label: "Halteverbotszone (" + zonen + "×)", eur: mitAufschlag(hv) });
+      zeilen.push({ label: "Halteverbotszone (" + zonen + "×)", eur: mitAufschlag(hv, marge) });
       summe += hv;
     }
     var mh = e.montageStunden || 0;
     if (mh > 0) {
       var mo = mh * KONFIG.montageStundensatzEur;
-      zeilen.push({ label: "Möbelmontage (ca. " + mh + " Std.)", eur: mitAufschlag(mo) });
+      zeilen.push({ label: "Möbelmontage (ca. " + mh + " Std.)", eur: mitAufschlag(mo, marge) });
       summe += mo;
     }
     return summe;
   }
+  function extrasKosten(e, zeilen) {
+    return extrasKostenMitMarge(e, zeilen, undefined);
+  }
 
-  function ergebnisAus(zeilen, hinweise, selbstkosten, minPreis, termin) {
-    var zwischensumme = mitAufschlag(selbstkosten);
+  function ergebnisAus(zeilen, hinweise, selbstkosten, minPreis, termin, aufschlagProzent) {
+    var zwischensumme = mitAufschlag(selbstkosten, aufschlagProzent);
     if (KONFIG.wochenendZuschlagProzent > 0 && wochenende(termin)) {
       var wz = zwischensumme * KONFIG.wochenendZuschlagProzent / 100;
       zeilen.push({ label: "Wochenendzuschlag (" + KONFIG.wochenendZuschlagProzent + " %)", eur: wz });
@@ -345,6 +357,7 @@ var KONFIG = {
     }
     var haupt = strecke(e.von, e.nach);
     var anteil = Math.min(e.volumenM3 / KONFIG.vollpreisAbM3, 1);
+    var marge = KONFIG.gewinnaufschlagBeiladungProzent;
 
     var fahrzeug = haupt.km * kostenProKm() * anteil;
     var fahrer = haupt.stunden * KONFIG.fahrerStundensatzEur * anteil;
@@ -357,18 +370,18 @@ var KONFIG = {
     var schwergut = schwergutZuschlag(e.schwer);
 
     var zeilen = [
-      { label: "Anteilige Fahrt (" + Math.round(haupt.km) + " km, " + e.volumenM3 + " m³)", eur: mitAufschlag(fahrzeug + fahrer) },
-      { label: "Be- und Entladen", eur: mitAufschlag(laden) }
+      { label: "Anteilige Fahrt (" + Math.round(haupt.km) + " km, " + e.volumenM3 + " m³)", eur: mitAufschlag(fahrzeug + fahrer, marge) },
+      { label: "Be- und Entladen", eur: mitAufschlag(laden, marge) }
     ];
-    if (traeger) zeilen.push({ label: "Tragehilfe", eur: mitAufschlag(traeger) });
-    if (etagen) zeilen.push({ label: "Etagenzuschlag", eur: mitAufschlag(etagen) });
-    if (schwergut) zeilen.push({ label: "Schwere Einzelstücke", eur: mitAufschlag(schwergut) });
-    var extras = extrasKosten(e, zeilen);
+    if (traeger) zeilen.push({ label: "Tragehilfe", eur: mitAufschlag(traeger, marge) });
+    if (etagen) zeilen.push({ label: "Etagenzuschlag", eur: mitAufschlag(etagen, marge) });
+    if (schwergut) zeilen.push({ label: "Schwere Einzelstücke", eur: mitAufschlag(schwergut, marge) });
+    var extras = extrasKostenMitMarge(e, zeilen, marge);
 
     var hinweise = ["Ihre Ladung fährt auf einer Tour mit – der Termin richtet sich nach der geplanten Route."];
     var erg = ergebnisAus(zeilen, hinweise,
       fahrzeug + fahrer + laden + traeger + etagen + schwergut + extras,
-      KONFIG.beiladungMinPreisEur, e.termin);
+      KONFIG.beiladungMinPreisEur, e.termin, marge);
     erg.streckeKm = haupt.km;
     return erg;
   }
@@ -644,9 +657,11 @@ var KONFIG = {
   function runSelfTests() {
     var ergebnisse = [];
     // Die Tests rechnen bewusst ohne Gewinnaufschlag, damit sie unabhängig
-    // davon gelten, welcher Prozentsatz gerade eingestellt ist.
+    // davon gelten, welche Prozentsätze gerade eingestellt sind.
     var margeVorher = KONFIG.gewinnaufschlagProzent;
+    var margeBeiladungVorher = KONFIG.gewinnaufschlagBeiladungProzent;
     KONFIG.gewinnaufschlagProzent = 0;
+    KONFIG.gewinnaufschlagBeiladungProzent = 0;
 
     function check(name, ist, soll, toleranz) {
       var ok = Math.abs(ist - soll) <= (toleranz || 0.01);
@@ -672,6 +687,7 @@ var KONFIG = {
     check("Mindestpreis Beiladung", minimal.total, KONFIG.beiladungMinPreisEur, 0);
 
     KONFIG.gewinnaufschlagProzent = margeVorher;
+    KONFIG.gewinnaufschlagBeiladungProzent = margeBeiladungVorher;
     var fehler = ergebnisse.filter(function (z) { return z.indexOf("FEHLER") === 0; }).length;
     console.log("Gaus-Preisrechner Selbsttest:\n" + ergebnisse.join("\n") +
                 "\n=> " + (ergebnisse.length - fehler) + "/" + ergebnisse.length + " OK");
